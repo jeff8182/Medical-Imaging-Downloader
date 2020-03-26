@@ -1,0 +1,6 @@
+pysimplegui
+pydicom
+pynetdicom
+pandas
+xlrd
+openpyxl

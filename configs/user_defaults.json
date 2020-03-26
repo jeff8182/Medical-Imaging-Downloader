@@ -1,0 +1,28 @@
+{
+    "default_download_dir": "./downloads/",
+    "default_xlsx_dir": "./xlsx/",
+    "default_src": "BMC PACS",
+    "default_dest": "<SELF>",
+    "default_column_selection": "StudyDescription",
+    "default_prefix_anon": "HIPAA_",
+    "default_prefix_raw": "RAW_",
+    "default_suffix_initial_queries": "_0_INITIAL_QUERIES_",
+    "default_suffix_search_results": "_1_SEARCH_RESULTS",
+    "default_suffix_success": "_3_SUCCESSFUL_DOWNLOADS",
+    "default_suffix_ignored": "_4_IGNORED_FOR_HIPAA",
+    "default_suffix_deselected": "_5_USER_EXCLUDED",
+    "default_suffix_failed": "_6_FAILED_TRANSFERS",
+    "default_suffix_missing": "_7_STUDIES_NOT_DOWNLOADED",
+    "default_suffix_legend": "_2_MASTER_KEY_LEGEND",
+    "default_legend_tags": [
+        "PatientID",
+        "StudyDate",
+        "StudyTime",
+        "StudyDescription",
+        "SeriesDescription",
+        "AccessionNumber",
+        "Modality",
+        "StudyInstanceUID",
+        "SeriesInstanceUID"
+    ]
+}

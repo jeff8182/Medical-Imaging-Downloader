@@ -1,0 +1,8 @@
+{
+    "DT": "DateTime",
+    "DA": "Date",
+    "TM": "Time",
+    "UI": "Unique Identifier UID",
+    "PN": "Person Name",
+    "SQ": "Sequence of Items"
+}

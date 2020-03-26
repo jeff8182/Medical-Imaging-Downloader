@@ -1,0 +1,13 @@
+{
+    "QUERY_IDENTIFIERS": [
+        "PatientID",
+        "StudyDate",
+        "AccessionNumber",
+        "StudyDescription",
+        "SeriesDescription",
+        "Modality",
+        "SeriesNumber",
+        "StudyInstanceUID",
+        "SeriesInstanceUID"
+    ]
+}

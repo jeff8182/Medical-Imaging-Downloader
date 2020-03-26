@@ -1,0 +1,16 @@
+{
+    "QUERY_TAGS": [
+        "PatientID",
+        "StudyDate",
+        "StudyTime",
+        "AccessionNumber",
+        "StudyDescription",
+        "SeriesDescription",
+        "Modality",
+        "SeriesNumber",
+        "StudyInstanceUID",
+        "SeriesInstanceUID",
+        "PatientAge",
+        "ReferringPhysicianName"
+    ]
+}

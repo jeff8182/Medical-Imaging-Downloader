@@ -1,0 +1,47 @@
+{
+    "AccessionNumber": [
+        "Accession",
+        "Accession Number"
+    ],
+    "Modality": [
+        "Mod"
+    ],
+    "PatientID": [
+        "MRN"
+    ],
+    "Query": [
+        "ID",
+        "Query",
+        "Query ID",
+        "QueryID",
+        "Index"
+    ],
+    "SeriesDescription": [
+        "Series Description"
+    ],
+    "SeriesInstanceUID": [
+        "SeriesUID",
+        "Series UID"
+    ],
+    "SeriesNumber": [
+        "Series Number"
+    ],
+    "StudyDate": [
+        "Date",
+        "Study Date",
+        "Date of Study"
+    ],
+    "StudyDescription": [
+        "Study Description",
+        "Description"
+    ],
+    "StudyInstanceUID": [
+        "StudyUID",
+        "Study UID"
+    ],
+    "StudyTime": [
+        "Time",
+        "Study Time",
+        "Time of Study"
+    ]
+}

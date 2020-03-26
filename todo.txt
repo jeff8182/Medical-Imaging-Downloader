@@ -1,0 +1,55 @@
+<BUGS>
+> ?'PatientAge' tag occasionally not retrieved from database?
+> alternating color table rows don't work
+> if C-MOVE request times out (e.g. server is configured wrong and 
+
+
+
+<TODO>
+
+>number the studies based on FILTERED search results, not the raw unfiltered search results
+
+>?remove ability to sort results, nobody really uses it because there's just too many studies to manually look through
+ and removing it will make things more consistent/set-in-stone
+
+>If provided, use USER-GENERATED CUSTOM IDs as the QUERY NUMBERING. Also add this to the default excel_headings.json
+
+>Change the "ALL" filter to not be an actual filter, but rather let it be used as a way to make global changes to all the other filters.
+ To make this change, it would be easier to just refactor
+
+>add ability to look forward/backwards from date, to hit the edge case where REPORT DATE is given by the user but the report was actually created on a date AFTER the actual STUDY DATE
+ (happens when study was done right before midnight, or sometimes the less urgent MRIs are read days after they're actually taken)
+
+>finish the FORMAT_TIME() function so we don't have to disable it lol (1) format to '%06d' (2) add functionality to fudge the seconds if user only has minutes/hours? low priority 
+
+>ability to CANNIBALIZE tags in anonymization tab
+
+>ability for user to choose what specific columns to load/map when loading a query file
+
+>ability to PICK UP WHERE WE LEFT OFF (if the transfer is cancelled early, change status of queued but undownloaded
+    studies to "CANCELLED" and then add a checkbox to choose "overwrite" vs "continue"
+
+>currently always create new folder, does not overwrite old folders
+        reenable SKIP_ONFILE check individual images for their series, not only the existence of study folder. This can
+        get tricky because we still have no way to know exactly how many images are supposed to be in each series/study,
+         so even if we can see the existence of at least 1 image from a series/study, we cannot guarantee that we have
+          all of them
+
+>post-download anonymization tab - see matt
+
+<Unimplemented>
+   -3. PBP DATES ARE DIFFERENT - ?if accession exists, should we ignore other study identifiers? (but then have to keep
+   series identifiers)
+   -2. synonyms - GET LIST OF STUDY DESCRIPTIONS
+   -1. parse_func - low priority, user should already have their list of desired studies and really shouldn't be
+   filtering by these
+            patientage - 064Y format
+            series - MULTIPLE SERIES ';' separator for multiple desired series in a single row
+   0. ULTRASOUND IMAGE RAW ANONYMIZATION - can easily cut images, but will be difficult to know WHERE to cut, and may be
+    dependent on the machine/brand. Low yield.
+
+        >?automatically assimilate any new tags we encounter
+    5. add post-download anonymization tab to be able to go back and anonymize studies after we download them
+
+
+

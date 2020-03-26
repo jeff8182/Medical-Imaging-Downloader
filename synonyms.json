@@ -1,0 +1,41 @@
+{
+    "synonyms": [
+        [
+            "CT C/A/P",
+            "CT CAP",
+            "CT CHEST ABD PELVIS",
+            "CT CHEST ABDOMEN PELVIS",
+            "CHEST ABD PELVIS"
+        ],
+        [
+            "CT HEAD",
+            "CT BRAIN"
+        ],
+        [
+            "CT ABD",
+            "CT A/P",
+            "CT BODY"
+        ],
+        [
+            "CT CHEST",
+            "CT LUNG"
+        ],
+        [
+            "MRI PELVIS",
+            "MR PELVIS"
+        ],
+        [
+            "MRI BRAIN",
+            "MR BRAIN"
+        ],
+        [
+            "MRI ABDOMEN",
+            "MR ABDOMEN"
+        ],
+        [
+            "NM BONE/JOINT",
+            "NM",
+            "BONE"
+        ]
+    ]
+}

@@ -1,0 +1,59 @@
+{
+    "DS": [
+        "PatientBodyMassIndex",
+        "PatientSize",
+        "PatientWeight"
+    ],
+    "SH": [
+        "AccessionNumber",
+        "ImplementationVersionName",
+        "PerformedProcedureStepID",
+        "StationName",
+        "StudyID"
+    ],
+    "IS": [
+        "AcquisitionNumber"
+    ],
+    "LO": [
+        "FillerOrderNumberImagingServiceRequest",
+        "InstitutionName",
+        "IssuerOfPatientID",
+        "PatientAddress",
+        "PatientID",
+        "RequestingService"
+    ],
+    "DA": [
+        "AcquisitionDate",
+        "ContentDate",
+        "InstanceCreationDate",
+        "PatientBirthDate",
+        "SeriesDate",
+        "StudyDate"
+    ],
+    "TM": [
+        "AcquisitionTime",
+        "ContentTime",
+        "InstanceCreationTime",
+        "SeriesTime",
+        "StudyTime"
+    ],
+    "UI": [
+        "FrameOfReferenceUID",
+        "ImplementationClassUID",
+        "SOPClassUID",
+        "SOPInstanceUID",
+        "SeriesInstanceUID",
+        "StudyInstanceUID",
+        "TransferSyntaxUID"
+    ],
+    "PN": [
+        "PatientName",
+        "ReferringPhysicianName"
+    ],
+    "SQ": [
+        "ProcedureCodeSequence",
+        "ReferedPatientSequence",
+        "ReferencedStudySequence",
+        "RequestAttributeSequence"
+    ]
+}
