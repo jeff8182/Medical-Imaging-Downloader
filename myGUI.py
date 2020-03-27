@@ -34,7 +34,7 @@ class GUI:
     default_btn_text = 'white'
     default_btn_color = (default_btn_text, default_btn_back)
     highlight_btn_back = 'limegreen'
-    highlight_btn_text = 'white'
+    highlight_btn_text = 'black'
     highlight_btn_color = (highlight_btn_text, highlight_btn_back)
 
     # *******************************
@@ -865,9 +865,14 @@ class GUI:
             [btn_find_main],
         ])
 
-        col_arrow_main = sg.Column([
+        col_arrow_main_fromsearchtofilter = sg.Column([
             [self.spacer()],
             [sg.Text('-'*34 + '>', font='Any 11')],  #, text_color='blue')]
+        ], pad=(0, 0))
+
+        col_arrow_main_fromfiltertotransfer = sg.Column([
+            [self.spacer()],
+            [sg.Text('-' * 34 + '>', font='Any 11')],  # , text_color='blue')]
         ], pad=(0, 0))
 
         # ------ COMBO: Destination Peer
@@ -913,9 +918,8 @@ class GUI:
             [text_label_localdir_main, text_dir_localdir_main, btn_browse_localdir_main]
         ]
         frame_localdir_main = sg.Frame('Local Server', framelayout_localdir_main, font='Any 11')
-
         col_middle_main = sg.Column([
-            [col_arrow_main, col_selection_btn_main, col_arrow_main],
+            [col_arrow_main_fromsearchtofilter, col_selection_btn_main, col_arrow_main_fromfiltertotransfer],
             [frame_localdir_main]
         ])
 
