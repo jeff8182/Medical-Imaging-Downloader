@@ -33,7 +33,7 @@ class GUI:
     default_btn_back = 'darkblue'
     default_btn_text = 'white'
     default_btn_color = (default_btn_text, default_btn_back)
-    highlight_btn_back = 'limegreen'
+    highlight_btn_back = 'green1'
     highlight_btn_text = 'black'
     highlight_btn_color = (highlight_btn_text, highlight_btn_back)
 
@@ -60,8 +60,106 @@ class GUI:
     def set_input(self, window, key, txt):
         window.Element(key).Update(txt)
 
-    def set_table(self, window, key, tbl):
-        window.Element(key).Update(tbl)
+    def update_table_with_headings(self, table_widget, values=None, num_rows=None, visible=None, select_rows=None,
+                                headings=None):
+        """
+        Changes some of the settings for the Table Element. Must call `Window.Read` or `Window.Finalize` prior
+
+        :param values:
+        :param num_rows:
+        :param visible: (bool) control visibility of element
+        :param select_rows:
+        """
+
+        headings = ['a', 'b', 'c', 'd']
+
+        if headings is not None:
+            for ii, nn in enumerate(headings):
+                table_widget.heading(ii, text=nn)
+
+        if values is not None:
+            children = table_widget.get_children()
+            for i in children:
+                table_widget.detach(i)
+                table_widget.delete(i)
+            children = table_widget.get_children()
+            # self.TKTreeview.delete(*self.TKTreeview.get_children())
+            for i, value in enumerate(values):
+                if self.DisplayRowNumbers:
+                    value = [i + self.StartingRowNumber] + value
+                id = table_widget.insert('', 'end', text=i, iid=i + 1, values=value, tag=i % 2)
+            if self.AlternatingRowColor is not None:
+                table_widget.tag_configure(1, background=self.AlternatingRowColor)
+            self.Values = values
+            self.SelectedRows = []
+        if visible is False:
+            table_widget.pack_forget()
+        elif visible is True:
+            table_widget.pack()
+        if num_rows is not None:
+            table_widget.config(height=num_rows)
+        if select_rows is not None:
+            rows_to_select = [i + 1 for i in select_rows]
+            table_widget.selection_set(rows_to_select)
+
+    def set_table(self, window, key, tbl, headings=None):
+        table_element = window.Element(key)
+
+        # PySimpleGUI DOES NOT SUPPORT UPDATING TABLE HEADINGS ON THE FLY, so we need to access the underlying TK
+        # widget and do it manually
+        if headings:
+            table_element.Widget["displaycolumns"] = headings
+            #print(table_element.Widget.get_children())
+            #for ii, nn in enumerate(headings):
+            #    table_element.Widget.heading(ii, text=nn)
+
+        table_element.Update(tbl)
+
+    def set_tree(self, window, key, studyNodes):
+        tree_element = window.Element(key)
+
+        # --- create UI tree
+        treedata = sg.TreeDict()
+
+        # track unique keys, since we may encounter multiple duplicate series/study descriptions
+        unique_keys = {}
+
+        # studyNodes is a list of unique combinations of one study description and its associated series descriptions
+        for studyNode in studyNodes:
+
+            key = studyNode.studyDescription
+            if key in unique_keys:
+                unique_keys[key] += 1
+            else:
+                unique_keys[key] = 1
+            unique_key = '_' + key + str(unique_keys[key]) + '_'
+
+            treedata.Insert(
+                parent='',
+                key=unique_key,
+                text=studyNode.studyDescription,
+                values=[studyNode.count],
+                icon=(sg.PSG_DEBUGGER_LOGO if studyNode.is_selected else sg.PSG_DEBUGGER_LOGO)
+            )
+            # for each unique series description in each unique study description
+            for series_description in sorted(studyNode.series_nodes.keys()):
+                series_is_selected = studyNode.series_nodes[series_description]
+
+                if series_description in unique_keys:
+                    unique_keys[series_description] += 1
+                else:
+                    unique_keys[series_description] = 1
+                series_unique_key = '_' + series_description + str(unique_keys[series_description]) + '_'
+
+                treedata.Insert(
+                    parent=unique_key,
+                    key=series_unique_key,
+                    text=series_description,
+                    icon=(sg.PSG_DEBUGGER_LOGO if series_is_selected else sg.PSG_DEBUGGER_LOGO)
+                )
+
+        tree_element.Update(treedata)
+
 
     def enableButton(self, window, key, enabled):
         disabled = not enabled
@@ -204,7 +302,7 @@ class GUI:
                             lst_available,
                             lst_selected=[],
                             title='Selector',
-                            txt_available='Available Options',
+                            txt_available='Unused Options',
                             txt_selected='Selected Options',
                             sort_available=True,
                             sort_selected=False,
@@ -790,7 +888,6 @@ class GUI:
                                       size=(300, 300),
                                       scrollable=True
                                       )
-
         col_table_raw_main = sg.Column([
             [text_table_raw_main, btn_load_main, txt_load_main],
             [coltable_raw_main]
@@ -1029,7 +1126,7 @@ class GUI:
             [tabgroup],
         ]
 
-        return sg.Window('Image Importer', layout).Finalize()
+        return sg.Window('Medical Imaging Downloader', layout).Finalize()
 
 
     def createSelectorLayout(self):
@@ -1047,7 +1144,8 @@ class GUI:
         col_all_SEL = sg.Column([
             [txt_all_SEL],
             [lst_all_SEL]
-        ])
+        ],
+        background_color='salmon')
 
         # --- Buttons column
         btn_add_SEL = sg.Button('Add -->', size=(12, 1), key='_BTN_ADD_SEL_')
@@ -1081,7 +1179,8 @@ class GUI:
             [txt_selected_SEL],
             [lst_selected_SEL],
             [btn_up_selected_SEL, btn_down_selected_SEL]
-        ])
+        ],
+        background_color='green1')
 
         # Ok/Cancel for selector window
         btn_ok_SEL = sg.Button('OK', size=(8, 2), key='_BTN_OK_SEL_')

@@ -914,8 +914,8 @@ class Main:
             writer.save()
 
 
-    def updateTable(self, ui, window, key, tbl):
-        ui.set_table(window, key, tbl)
+    def updateTable(self, ui, window, key, tbl, headings=None):
+        ui.set_table(window, key, tbl, headings)
 
 
     def threaded_perform_moves(self,
@@ -1645,8 +1645,11 @@ class Main:
                 df_queries = df_queries_temp[query_table_headings]
 
                 # --- Update UI
-                tbl_raw = df_queries.values.tolist()
-                self.updateTable(ui, ui.main_window, '_TABLE_RAW_MAIN_', tbl_raw)
+                # don't display any data header columns that are empty
+                df_queries_valid = df_queries.replace('', np.nan).dropna(axis=1)
+                tbl_queries = df_queries_valid.values.tolist()
+                headings_queries = df_queries_valid.columns.tolist()
+                self.updateTable(ui, ui.main_window, '_TABLE_RAW_MAIN_', tbl_queries, headings=headings_queries)
 
                 # --- Advance the stage
                 ui.set_phase(ui.PHASE_FIND)

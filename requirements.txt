@@ -1,6 +1,8 @@
 pysimplegui
+ttkwidgets
 pydicom
 pynetdicom
 pandas
 xlrd
 openpyxl
+
