@@ -4,6 +4,8 @@ if sys.version_info[0] >= 3:
 else:
     import PySimpleGUI27 as sg
 
+from datastruct import Status
+
 class GUI:
 
     # *******************************
@@ -36,6 +38,24 @@ class GUI:
     highlight_btn_back = 'green1'
     highlight_btn_text = 'black'
     highlight_btn_color = (highlight_btn_text, highlight_btn_back)
+
+    # icons
+    # green check mark
+
+    icon_greencheck = 'assets/greencheck16.png'
+    icon_blackdash = 'assets/blackdash16.png'
+    icon_blackdashthin = 'assets/blackdashthin16.png'
+    icon_blackdashthick = 'assets/blackdashthick16.png'
+    icon_blackcross = 'assets/blackcross16.png'
+    icon_blackcrossthick = 'assets/blackcrossthick16.png'
+    icon_redcross = 'assets/redcross16.png'
+    icon_checkboxcheckedgreen = 'assets/checkboxcheckedgreen16.png'
+    icon_checkboxempty = 'assets/checkboxempty16.png'
+    icon_smallcheckboxcheckedgreen = 'assets/smallcheckboxcheckedgreen16.png'
+    icon_smallcheckboxempty = 'assets/smallcheckboxempty16.png'
+
+    # not selected
+
 
     # *******************************
     # FUNCTIONS
@@ -115,50 +135,73 @@ class GUI:
 
         table_element.Update(tbl)
 
-    def set_tree(self, window, key, studyNodes):
+    def set_tree_series_node(self, window, treekey, nodekey, status):
+        tree_element = window.Element(treekey)
+
+        switcher = {
+            Status.SELECTED: self.icon_smallcheckboxcheckedgreen,
+            Status.UNSELECTED: self.icon_smallcheckboxempty,
+            Status.DOWNLOADED: self.icon_redcross
+        }
+        icon = switcher[status]
+
+        tree_element.Update(
+            key=nodekey,
+            icon=icon,
+            value=[]#status.value]
+        )
+
+    def set_tree_study_node(self, window, treekey, nodekey, is_selected):
+        tree_element = window.Element(treekey)
+
+        tree_element.Update(
+            key=nodekey,
+            icon=self.icon_greencheck if is_selected else self.icon_blackcross
+        )
+
+    def set_tree(self, window, key, study_nodes):
         tree_element = window.Element(key)
 
         # --- create UI tree
-        treedata = sg.TreeDict()
+        treedata = sg.TreeData()
 
         # track unique keys, since we may encounter multiple duplicate series/study descriptions
         unique_keys = {}
 
         # studyNodes is a list of unique combinations of one study description and its associated series descriptions
-        for studyNode in studyNodes:
+        for study_key in study_nodes.keys():
+            study_node = study_nodes[study_key]
 
-            key = studyNode.studyDescription
-            if key in unique_keys:
-                unique_keys[key] += 1
-            else:
-                unique_keys[key] = 1
-            unique_key = '_' + key + str(unique_keys[key]) + '_'
-
+            # THIS STUDY
             treedata.Insert(
                 parent='',
-                key=unique_key,
-                text=studyNode.studyDescription,
-                values=[studyNode.count],
-                icon=(sg.PSG_DEBUGGER_LOGO if studyNode.is_selected else sg.PSG_DEBUGGER_LOGO)
+                key=study_node.unique_key,
+                text=study_node.study_description,
+                values=[str(study_node.num_similar_studyseries) +
+                        ' Stud' +
+                        ('y' if study_node.num_selected_series == 1 else 'ies')],
+                icon=(self.icon_greencheck if study_node.num_selected_series > 0 else self.icon_blackcross)
             )
+
             # for each unique series description in each unique study description
-            for series_description in sorted(studyNode.series_nodes.keys()):
-                series_is_selected = studyNode.series_nodes[series_description]
-
-                if series_description in unique_keys:
-                    unique_keys[series_description] += 1
-                else:
-                    unique_keys[series_description] = 1
-                series_unique_key = '_' + series_description + str(unique_keys[series_description]) + '_'
-
+            series_switcher = {
+                Status.SELECTED: self.icon_smallcheckboxcheckedgreen,
+                Status.UNSELECTED: self.icon_smallcheckboxempty,
+                Status.DOWNLOADED: self.icon_redcross
+            }
+            for series_unique_key in sorted(study_node.series_nodes.keys()):
+                series_node = study_node.series_nodes[series_unique_key]
+                # series within the study
                 treedata.Insert(
-                    parent=unique_key,
-                    key=series_unique_key,
-                    text=series_description,
-                    icon=(sg.PSG_DEBUGGER_LOGO if series_is_selected else sg.PSG_DEBUGGER_LOGO)
+                    parent=study_node.unique_key,
+                    key=series_node.unique_key,
+                    text=series_node.series_description,
+                    values=[],#series_node.status.value],
+                    icon=(series_switcher[series_node.status])
                 )
 
         tree_element.Update(treedata)
+        return treedata
 
 
     def enableButton(self, window, key, enabled):
@@ -235,7 +278,7 @@ class GUI:
         self.enableButton(self.main_window, '_LOAD_MAIN_', False)
         self.enableButton(self.main_window, '_LOAD_SEARCH_RESULTS_MAIN_', False)
         self.enableButton(self.main_window, '_FIND_MAIN_', False)
-        self.enableButton(self.main_window, '_FILT_MAIN_', False)
+        #self.enableButton(self.main_window, '_FILT_MAIN_', False)
         self.enableButton(self.main_window, '_MOVE_MAIN_', False)
 
     def set_phase(self, phase):
@@ -255,6 +298,23 @@ class GUI:
 
     def popup(self, txt, title=None, keep_on_top=True):
         sg.Popup(txt, title=title, keep_on_top=keep_on_top)
+
+    def popupTextBox(self, txt, title=None, keep_on_top=True):
+        popupWindow = sg.Window(
+            title=title,
+            layout=[
+                [sg.Multiline(default_text=txt, size=(60, None))],
+                [sg.Button('Ok', key='_POPUP_OK_')]
+            ],
+            keep_on_top=keep_on_top
+        ).Finalize()
+        while True:
+            event, values = popupWindow.Read()
+            if event is None or event == 'Exit' or event == '_POPUP_OK_':
+                break
+
+        popupWindow.Close()
+
 
     def popupError(self, txt, keep_on_top=True):
         self.popup(txt, title='Error', keep_on_top=keep_on_top)
@@ -846,6 +906,7 @@ class GUI:
         # Return all values in the
         return final_dual_selections
 
+
     def spacer(self, sz=(1, 1)):
         return sg.Text('', sz)
 
@@ -905,31 +966,38 @@ class GUI:
                                   key='_LOAD_SEARCH_RESULTS_MAIN_')
         text_descriptor_main = sg.Text('', size=(85, 1), key='_DESCRIPTOR_MAIN_')
 
-        results_padding = padding_pretty_results_main if padding_pretty_results_main else [''] * len(
-            headings_pretty_results_main)
-        table_results_main = sg.Table(
-            values=[results_padding],
-            headings=headings_pretty_results_main,
-            select_mode='extended',
-            num_rows=15,
-            alternating_row_color='#ffffff',
-            vertical_scroll_only=True,
-            hide_vertical_scroll=True,
-            justification='left',
-            key='_TABLE_RESULTS_MAIN_'
+        #results_padding = padding_pretty_results_main if padding_pretty_results_main else [''] * len(
+        #    headings_pretty_results_main)
+        filler_treedata = sg.TreeData()
+        filler_treedata.Insert(
+            parent='',
+            key='_',
+            text='',
+            values=[],
         )
-        coltable_results_main = sg.Column([[table_results_main]],
-                                          size=(900, 300),
+        tree_results_main = sg.Tree(
+            data=filler_treedata,
+            headings=['   Status   '],
+            col0_width=36,
+            def_col_width=25,
+            select_mode='browse',
+            num_rows=15,
+            justification='center',
+            enable_events=True,
+            key='_TREE_RESULTS_MAIN_'
+        )
+        coltable_results_main = sg.Column([[tree_results_main]],
+                                          size=(575, 300),
                                           scrollable=True
                                           )
 
         col_table_results_main = sg.Column([
-            [text_table_results_main, btn_load_find_results_main, btn_sort_main, text_descriptor_main],
+            [text_table_results_main, btn_load_find_results_main, text_descriptor_main], #btn_sort_main],
             [coltable_results_main],
         ])
 
         # ------ BUTTONS and OPTIONS: Find, Move
-        btn_find_main = sg.Button('2. SEARCH DATABASE',
+        btn_find_main = sg.Button('2. QUERY DATABASE',
                                   size=(20, 1),
                                   button_color=self.default_btn_color,
                                   key='_FIND_MAIN_')
@@ -1006,28 +1074,27 @@ class GUI:
             [btn_value_selector]
         ])
 
-        # - local server storage directory
-        text_label_localdir_main = sg.Text('Directory: ')  # , size=(13, 1))
-        text_dir_localdir_main = sg.Text('', size=(56, 1), key='_DIR_LOCAL_CFG_')
-        btn_browse_localdir_main = sg.Button('Browse', key='_BTN_LOCAL_CFG_')
-
-        framelayout_localdir_main = [
-            [text_label_localdir_main, text_dir_localdir_main, btn_browse_localdir_main]
-        ]
-        frame_localdir_main = sg.Frame('Local Server', framelayout_localdir_main, font='Any 11')
-        col_middle_main = sg.Column([
-            [col_arrow_main_fromsearchtofilter, col_selection_btn_main, col_arrow_main_fromfiltertotransfer],
-            [frame_localdir_main]
-        ])
-
         # ------ ASSEMBLE:
         tablayout_main = [
             [col_table_raw_main, col_table_results_main],
-            [col_src_main, col_middle_main, col_dest_main]
+            [col_src_main, col_selection_btn_main, col_dest_main]
         ]
         tab_main = sg.Tab('Main', tablayout_main)
 
         # -------------------------- TAB: Config/Settings
+
+        # - local server storage directory
+        text_label_localdir_cfg = sg.Text('Directory: ')  # , size=(13, 1))
+        text_dir_localdir_cfg = sg.Text('', size=(56, 1), key='_DIR_LOCAL_CFG_')
+        btn_browse_localdir_cfg = sg.Button('Browse', key='_BTN_LOCAL_CFG_')
+
+        framelayout_localdir_cfg = [
+            [text_label_localdir_cfg, text_dir_localdir_cfg, btn_browse_localdir_cfg]
+        ]
+        frame_localdir_cfg = sg.Frame('Local File Storage Location', framelayout_localdir_cfg, font='Any 11')
+        col_localdir_cfg = sg.Column([
+            [frame_localdir_cfg]
+        ])
 
         # -- Peers Config
 
@@ -1037,7 +1104,7 @@ class GUI:
         lst_peers_cfg = sg.Listbox(
             values=[],
             size=(25, 5),
-            select_mode='single',
+            select_mode='none',
             key='_LST_PEERS_CFG_')
 
         col1_peers_cfg = sg.Column([
@@ -1084,12 +1151,10 @@ class GUI:
             [frame_peers_cfg]
         ])
 
-        # --- STDOUT output, for debugging purposes
-        #output_cfg = sg.Output(size=(75, 20))
-
         # --- Assemble config tab
         tablayout_cfg = [
-            [col_settings_cfg, ]#output_cfg]
+            [col_localdir_cfg],
+            [col_settings_cfg],
         ]
         tab_cfg = sg.Tab('Settings', tablayout_cfg)
 

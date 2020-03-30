@@ -411,21 +411,22 @@ class PAC:
         try:
             ds = event.dataset
             ds.file_meta = event.file_meta
+            original_studyuid = ds.StudyInstanceUID
+            original_seriesuid = ds.SeriesInstanceUID
 
             # ------------------ 3. Track the original studyUID/seriesUID
             # The original studyUID is used as an internal representation for us to track
             # completion of the transfer of this study. Use it as a key in our status-tracking structure,
             # 'self.MOVED_STUDYUIDS'
-            original_studyuid = ds.StudyInstanceUID
-            original_seriesuid = ds.SeriesInstanceUID
+
             # Track how many images we've successfully received for each original studyUID
-            key = (original_studyuid, original_seriesuid)
-            if key not in self.MOVED_STUDYUIDS:
+            studyserieskey = (original_studyuid, original_seriesuid)
+            if studyserieskey not in self.MOVED_STUDYUIDS:
                 # stored, passed (due to anonymization), misc messages (e.g. errors)
-                self.MOVED_STUDYUIDS[key] = [0, 0, None]
+                self.MOVED_STUDYUIDS[studyserieskey] = [0, 0, None]
             if original_studyuid not in self.MOVED_STUDYUIDS:
                 self.MOVED_STUDYUIDS[original_studyuid] = [0, 0]
-            [series_stored, series_passed, message] = self.MOVED_STUDYUIDS[key]
+            [series_stored, series_passed, message] = self.MOVED_STUDYUIDS[studyserieskey]
             [study_stored, study_passed] = self.MOVED_STUDYUIDS[original_studyuid]
 
             # --- cool tips: check if tag is in dataset via:
@@ -464,12 +465,20 @@ class PAC:
             # ------------------ 5. IMAGE NAME
             # Image numbering/naming is not affected by anonymization
             #filename = 'img%04d.dcm' % (study_stored+1+study_passed)
-            filename = '%04d_ser%03dimg%03d_%s_%s.dcm' % \
-                       (study_stored+1+study_passed,
-                        int(ds.SeriesNumber),
-                        int(ds.InstanceNumber),
-                        self.squish(ds.StudyDescription, word_limit=3),
-                        self.squish(ds.SeriesDescription))
+            # filename = '%04d_ser%03dimg%03d_%s_%s.dcm' % \
+            #            (study_stored+1+study_passed,
+            #             int(ds.SeriesNumber),
+            #             int(ds.InstanceNumber),
+            #             self.squish(ds.StudyDescription, word_limit=3),
+            #             self.squish(ds.SeriesDescription))
+            filename = 'ser%03dimg%03d_%s_%s.dcm' % \
+                       (
+                           int(ds.SeriesNumber),
+                           int(ds.InstanceNumber),
+                           self.squish(ds.StudyDescription, word_limit=3),
+                           self.squish(ds.SeriesDescription)
+                       )
+
 
             # ------------------ 4. ANONYMIZATION
             if self.ANONYMIZE_HEADERS:
@@ -478,7 +487,7 @@ class PAC:
                 # Return without storing to file
                 if ds is None:
                     series_passed += 1
-                    self.MOVED_STUDYUIDS[key] = [series_stored, series_passed, 'IGNORED']
+                    self.MOVED_STUDYUIDS[studyserieskey] = [series_stored, series_passed, 'IGNORED']
                     study_passed += 1
                     self.MOVED_STUDYUIDS[original_studyuid] = [study_stored, study_passed]
                     return 0x0000
@@ -488,33 +497,33 @@ class PAC:
             full_studydir = os.path.join(self.DESTINATION_DIRECTORY, studydirname)
             # Full image path
             full_path = os.path.join(full_studydir, filename)
-            # Check and create folders
+            # Check and create storage folders as necessary
             if not os.path.isdir(full_studydir):
                 os.makedirs(full_studydir)
-            # if we are at the very first image saved for this study, clear any previous folder contents
-            elif study_stored == 0:
-                for fname in os.listdir(full_studydir):
-                    del_path = os.path.join(full_studydir, fname)
-                    try:
-                        # delete any files in the folder (will not touch subfolders)
-                        if os.path.isfile(del_path):
-                            os.unlink(del_path)
-                    except Exception as err:
-                        traceback.print_stack()
-                        print(err)
+            # # if we are at the very first image saved for this study, clear any previous folder contents
+            # elif study_stored == 0:
+            #     for fname in os.listdir(full_studydir):
+            #         del_path = os.path.join(full_studydir, fname)
+            #         try:
+            #             # delete any files in the folder (will not touch subfolders)
+            #             if os.path.isfile(del_path):
+            #                 os.unlink(del_path)
+            #         except Exception as err:
+            #             traceback.print_stack()
+            #             print(err)
 
             # ------------------ 7. Write like an egyptian
             ds.save_as(full_path, write_like_original=False)
 
             # ------------------ 8. Update the status of this study in our handy dandy status dict
             series_stored += 1
-            self.MOVED_STUDYUIDS[key] = [series_stored, series_passed, message]
+            self.MOVED_STUDYUIDS[studyserieskey] = [series_stored, series_passed, message]
             study_stored += 1
             self.MOVED_STUDYUIDS[original_studyuid] = [study_stored, study_passed]
 
         except Exception as err:
             traceback.print_stack()
-            self.MOVED_STUDYUIDS[key] = [series_stored, series_passed, ('FAILED STORAGE: %s' % str(err))]
+            self.MOVED_STUDYUIDS[studyserieskey] = [series_stored, series_passed, ('FAILED STORAGE: %s' % str(err))]
             print(err)
 
         # Return a 'Success' status
