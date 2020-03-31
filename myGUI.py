@@ -179,7 +179,7 @@ class GUI:
                 text=study_node.study_description,
                 values=[str(study_node.num_similar_studyseries) +
                         ' Stud' +
-                        ('y' if study_node.num_selected_series == 1 else 'ies')],
+                        ('y' if study_node.num_similar_studyseries == 1 else 'ies')],
                 icon=(self.icon_greencheck if study_node.num_selected_series > 0 else self.icon_blackcross)
             )
 
@@ -927,10 +927,9 @@ class GUI:
         # -------------------------- TAB: Main
 
         # ------ TABLE: raw entries loaded from a file
-        text_table_raw_main = sg.Text('    Studies of Interest (Queries)', text_color='darkblue', font='Any 11')
+        text_table_raw_main = sg.Text('  Studies of Interest (Queries)', text_color='darkblue', font='Any 11')
         txt_load_main = sg.Input('', visible=False, do_not_clear=False, enable_events=True, key='_TXT_LOAD_MAIN_')
-        btn_load_main = sg.Button('1. Load',
-                                  size=(7, 1),
+        btn_load_main = sg.Button('1. Load Queries',
                                   button_color=self.default_btn_color,
                                   key='_LOAD_MAIN_')
         raw_padding = padding_pretty_raw_main if padding_pretty_raw_main else [' ' * 6] * len(headings_pretty_raw_main)
@@ -955,16 +954,16 @@ class GUI:
         ])
 
         # ------ TABLE: query results
-        text_table_results_main = sg.Text('    Query Results', size=(17, 1), text_color='darkblue', font='Any 11',
+        text_table_results_main = sg.Text('  Query Results', text_color='darkblue', font='Any 11',
                                           key='_LABEL_RESULTS_MAIN_')
         btn_sort_main = sg.Button('Sort',
                                   size=(9, 1),
                                   key='_SORT_MAIN_')
-        btn_load_find_results_main = sg.Button('Load',
-                                  size=(6, 1),
+        btn_load_find_results_main = sg.Button('Load Snapshot',
+                                  size=(12, 1),
                                   button_color=self.default_btn_color,
                                   key='_LOAD_SEARCH_RESULTS_MAIN_')
-        text_descriptor_main = sg.Text('', size=(85, 1), key='_DESCRIPTOR_MAIN_')
+        text_descriptor_main = sg.Text('', size=(45, 1), key='_DESCRIPTOR_MAIN_')
 
         #results_padding = padding_pretty_results_main if padding_pretty_results_main else [''] * len(
         #    headings_pretty_results_main)
