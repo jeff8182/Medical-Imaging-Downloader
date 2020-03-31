@@ -26,16 +26,14 @@ class StudyDescriptionNode:
     num_similar_studyseries = 1
     series_nodes = {}
     unique_key = None
-    status = None
 
-    def __init__(self, study_description, unique_key, status, is_selected=False):
+    def __init__(self, study_description, unique_key, is_selected=False):
         self.study_description = study_description
         self.series_nodes = {}
         self.num_similar_studyseries = 1
         self.unique_key = unique_key
         self.is_selected = is_selected
         self.num_selected_series = 0
-        self.status = status
 
     def add_series_node(self, series_node, is_selected=False):
         if is_selected:

@@ -67,16 +67,14 @@ class Main:
         "default_src": "BMC PACS",
         "default_dest": SELF,
         "default_column_selection": "StudyDescription",
-        "default_prefix_anon": "HIPAA_",
+        "default_prefix_anon": "ANON_",
         "default_prefix_raw": "RAW_",
-        "default_suffix_initial_queries": "_0_INITIAL_QUERIES_",
-        "default_suffix_search_results": "_1_SEARCH_RESULTS",
-        "default_suffix_success": "_3_SUCCESSFUL_DOWNLOADS",
-        "default_suffix_ignored": "_4_IGNORED_FOR_HIPAA",
-        "default_suffix_deselected": "_5_USER_EXCLUDED",
-        "default_suffix_failed": "_6_FAILED_TRANSFERS",
-        "default_suffix_missing": "_7_STUDIES_NOT_DOWNLOADED",
-        "default_suffix_legend": "_2_MASTER_KEY_LEGEND",
+        "default_suffix_initial_queries": "_SearchQueries",
+        "default_suffix_search_results": "_SearchResults_SNAPSHOT",
+        "default_suffix_success": "_SuccessfulDownloads",
+        "default_suffix_failure": "_UnsatisfiedQueries",
+        "default_suffix_allstudies": "_AllResults_ByStudies",
+        "default_suffix_allseries": "_AllResults_Full",
         "default_legend_tags": ["PatientID",
                                 "StudyDate",
                                 "StudyTime",
@@ -466,7 +464,8 @@ class Main:
         return self.description_to_queryidentifier(descr, exact_match)
 
     # Saves dataframe to xlsx
-    def save_to_xlsx(self, ui, full_path, df, file_descriptor='the', create_dirs=False, include_index=False):
+    def save_to_xlsx(self, ui, dir_out, fname_out, df, file_descriptor='the', create_dirs=False, include_index=False):
+        full_path = os.path.join(dir_out, fname_out)
         while True:
             try:
                 if create_dirs:
@@ -644,7 +643,7 @@ class Main:
                 all_results['Query'].append(query_identifier)
 
             # Update the status column
-            all_results['Status'] += ['READY'] * num_results
+            all_results['Status'] += ['FOUND'] * num_results
 
         # --- Deal with queries that had 0 matches
         else:
@@ -914,14 +913,17 @@ class Main:
     # WILL IGNORE ANY (Status == 'Missing') entries, because those are failed queries
     def parse_query_results_to_study_nodes(self, df):
 
+        # do not display any unfound queries (represented by rows where (df['Status'] == 'MISSING')
+        df = df[df['Status'] != 'MISSING']
+
         # aggregate all seriesdescriptions associated with each study
-        df = df.sort_values(['Status', 'Modality', 'Study', 'StudyDescription', 'SeriesDescription']).groupby(
-            ['Status', 'Modality', 'Study', 'StudyDescription'])[
+        df = df.sort_values(['Modality', 'Study', 'StudyDescription', 'SeriesDescription']).groupby(
+            ['Modality', 'Study', 'StudyDescription'])[
             'SeriesDescription'].agg('~~~'.join).reset_index()
 
         # sort and convert to a dict for parsing
-        datadict = df[['Status', 'Modality', 'StudyDescription', 'SeriesDescription']]. \
-            sort_values(['Status', 'Modality', 'StudyDescription', 'SeriesDescription']). \
+        datadict = df[['Modality', 'StudyDescription', 'SeriesDescription']]. \
+            sort_values(['Modality', 'StudyDescription', 'SeriesDescription']). \
             to_dict(orient='index')
 
         # track unique study-series keys, since we may encounter multiple duplicate series/study descriptions.
@@ -930,17 +932,14 @@ class Main:
         study_nodes = {}
         for index in datadict.keys():
             row = datadict[index]
-            if row['Status'] == 'MISSING':
-                continue
+
             studyseries_unique_key = 'STUDY:' + row['StudyDescription'] + '___ALLSERIES' + row['SeriesDescription']
             if studyseries_unique_key in study_nodes:
                 study_nodes[studyseries_unique_key].num_similar_studyseries += 1
             else:
                 # --- STUDY NODE
                 # create study node
-                study_node = datastruct.StudyDescriptionNode(row['StudyDescription'],
-                                                             studyseries_unique_key,
-                                                             row['Status'])
+                study_node = datastruct.StudyDescriptionNode(row['StudyDescription'], studyseries_unique_key)
 
                 # --- SERIES NODES associated with this study node
                 for seriesd in list(filter(None, row['SeriesDescription'].split('~~~'))):
@@ -988,7 +987,9 @@ class Main:
 
                 # --- update progressbar via queue
                 key = '_T_PROGRESS_'
-                msg = 'SOURCE:        %s\n' \
+                msg = 'WARNING: DO NOT CLICK THE X. TO CANCEL, CLICK "CANCEL" AND THE TRANSFER WILL STOP AFTER THE ' \
+                      'CURRENT STUDY/SERIES IS COMPLETED.\n' \
+                      'SOURCE:        %s\n' \
                       'DESTINATION:   %s\n' \
                       '\nTransferring %d out of %d...\n' \
                       '\nStudy #: %s\nStudy: %s\nSeries: %s' \
@@ -1280,16 +1281,15 @@ class Main:
         user_defaults_key = 'config_user_defaults'
         user_defaults = self.load_json(config[user_defaults_key], default=self.DEFAULT_USER_DEFAULTS)
 
-        anon_prefix = user_defaults['default_prefix_anon']
-        raw_prefix = user_defaults['default_prefix_raw']
-        initial_queries_suffix = user_defaults['default_suffix_initial_queries']
-        search_results_suffix = user_defaults['default_suffix_search_results']
-        success_suffix = user_defaults['default_suffix_success']
-        ignored_suffix = user_defaults['default_suffix_ignored']
-        deselected_suffix = user_defaults['default_suffix_deselected']
-        missing_suffix = user_defaults['default_suffix_missing']
-        failed_suffix = user_defaults['default_suffix_failed']
-        legend_suffix = user_defaults['default_suffix_legend']
+        prefix_anon = user_defaults['default_prefix_anon']
+        prefix_raw = user_defaults['default_prefix_raw']
+        suffix_initial_queries = user_defaults['default_suffix_initial_queries']
+        suffix_search_results = user_defaults['default_suffix_search_results']
+        suffix_success = user_defaults['default_suffix_success']
+        suffix_failure = user_defaults['default_suffix_failure']
+        suffix_allstudies = user_defaults['default_suffix_allstudies']
+        suffix_allseries = user_defaults['default_suffix_allseries']
+
         legend_tags = user_defaults['default_legend_tags']
         legend_tags = [x for x in legend_tags if x in master_tagname_to_tag]
         src_highlight = user_defaults['default_src']
@@ -1482,28 +1482,32 @@ class Main:
                     # we start with a blank slate, with no studies/series selected
                     num_total_selected_series = 0
 
-                    # --- Update our main table title and descriptor
+                    # --- Update our results descriptor
+                    num_queries = df_results['Query'].nunique()
                     num_missing = len(df_results[df_results['Status'] == 'MISSING'])
-                    num_matches = len(df_results) - num_missing
-                    num_unmatched_queries = num_missing
-                    num_matched_queries = len(queries) - num_missing
-                    ui.set_txt(ui.main_window, '_LABEL_RESULTS_MAIN_', '    QUERY Results')
-                    descriptor = '[SEARCH] of [%s] using [%s]:  [%d] matched with [%d] results, [%d] unmatched.' % \
-                                 (peer_info['peer_name'], os.path.basename(load_path), num_matched_queries, num_matches,
-                                  num_unmatched_queries)
+                    num_matches = df_results['Study'].nunique() - num_missing
+                    descriptor = '%d Quer%s: %d Matching stud%s, %d Unmatched quer%s' % \
+                                 (num_queries, 'y' if num_queries == 1 else 'ies',
+                                  num_matches, 'y' if num_matches == 1 else 'ies',
+                                  num_missing, 'y' if num_missing == 1 else 'ies',)
                     ui.set_txt(ui.main_window, '_DESCRIPTOR_MAIN_', descriptor)
 
                     # --- Save the find results to an excel file
                     splt = os.path.splitext(os.path.basename(load_path))
                     basename_no_ext = splt[0]
                     ext = splt[1]
-                    find_results_fname = os.path.join(xlsx_dir, basename_no_ext + search_results_suffix + ext)
-                    self.save_to_xlsx(ui, find_results_fname, df_results, file_descriptor='SEARCH RESULTS',
+                    self.save_to_xlsx(ui,
+                                      xlsx_dir, basename_no_ext + suffix_search_results + ext,
+                                      df_results,
+                                      file_descriptor='SEARCH RESULTS',
                                       create_dirs=True)
 
                     # --- Announce the good news
-                    ui.popup('Search complete\n[%d] matched with [%d] results, [%d] unmatched.' % (
-                        num_matched_queries, num_matches, num_unmatched_queries))
+                    ui.popup('Search Complete\n\n%d Quer%s:\n%d Stud%s found\n%d Unmatched quer%s' % (
+                        (num_queries, 'y' if num_queries == 1 else 'ies',
+                         num_matches, 'y' if num_matches == 1 else 'ies',
+                         num_missing, 'y' if num_missing == 1 else 'ies',)
+                    ))
 
                     # --- advance the phase
                     ui.set_phase(ui.PHASE_FILT)
@@ -1526,90 +1530,60 @@ class Main:
                     # create a legend based on whatever information we do have currently.
                     headings_out = ['Study', 'Status', 'Query'] + legend_tags
                     basename_out = os.path.basename(self_move_dir)
-                    dir_out = self_move_dir
 
                     # --- INITIAL QUERIES (e.g. the most basic user-passed-in queries used for the initial search),
                     # with associated automatically assigned query numbering that is propagated forward in the
                     # search/transfer result excel files
                     if df_queries is not None:
                         df_initial_queries = df_queries
-                        fname_out = basename_out + initial_queries_suffix + '.xlsx'
-                        path_out = os.path.join(dir_out, fname_out)
-                        self.save_to_xlsx(ui, path_out, df_initial_queries, file_descriptor='INITIAL QUERIES')
+                        fname_out = basename_out + suffix_initial_queries + '.xlsx'
+                        self.save_to_xlsx(ui, self_move_dir, fname_out, df_initial_queries, file_descriptor='INITIAL '
+                                                                                                       'QUERIES')
 
-                    # --- MASTER LEGEND/KEY for all entries
-                    df_master_key_legend = df_results[headings_out]
-                    fname_out = basename_out + legend_suffix + '.xlsx'
-                    path_out = os.path.join(dir_out, fname_out)
-                    self.save_to_xlsx(ui, path_out, df_master_key_legend, file_descriptor='MASTER KEY/LEGEND')
 
-                    # --- IGNORED entries (primarily due to ANONYMIZATION)
-                    df_ignored = df_results[df_results['Status'].str.startswith('IGNORED')][headings_out]
-                    fname_out = basename_out + ignored_suffix + '.xlsx'
-                    path_out = os.path.join(dir_out, fname_out)
-                    self.save_to_xlsx(ui, path_out, df_ignored, file_descriptor='ENTRIES IGNORED DUE TO ANONYMIZATION')
+                    # --- FIND/MOVE RESULTS
 
-                    # --- DESELECTED/EXCLUDED entries (due to manual user selection/deselection)
-                    df_deselected = df_results[df_results['Status'].str.startswith('READY')][headings_out]
-                    fname_out = basename_out + deselected_suffix + '.xlsx'
-                    path_out = os.path.join(dir_out, fname_out)
-                    self.save_to_xlsx(ui, path_out, df_deselected, file_descriptor='USER-DESELECTED ENTRIES')
+                    # - squish seriesdescriptions into one row as necessary
+                    df_output = df_results[headings_out]
+                    headings_out_no_series = [x for x in headings_out if 'Series' not in x]
+                    df_output_by_study = df_output.groupby(headings_out_no_series)['SeriesDescription']\
+                        .agg('+'.join).reset_index()
 
-                    # --- MISSING entries (two possibilities)
-                    # (1) query not found in the peer's database, or
-                    df_notfound = df_results[df_results['Status'].str.startswith('MISSING')][headings_out]
-                    # (2) query found (which may or may not return multiple studies), but user filters/anonymization
-                    # caused ZERO series from this given study to be downloaded. This overlaps with the "excluded
-                    # entries" excel sheet
-                    excluded_studyuids = set(
-                        df_deselected['StudyInstanceUID'])
-                    success_studyuids = set(
-                        df_results.loc[df_results['Status'].str.startswith('DOWNLOADED'), 'StudyInstanceUID'])
-                    fully_excluded_studyuids = excluded_studyuids.difference(success_studyuids)
-                    df_fully_excluded = df_results.loc[df_results['StudyInstanceUID'].isin(fully_excluded_studyuids),
-                                                       headings_out]
+                    # - ALL results (SERIES level, essentially displaying every piece of data we have, as granular as
+                    # we can get)
+                    fname_out = basename_out + suffix_allseries + '.xlsx'
+                    self.save_to_xlsx(ui, self_move_dir, fname_out, df_results,
+                                      file_descriptor='ALL RESULTS (EVERY SERIES)')
 
-                    df_missing = pd.concat([df_notfound, df_fully_excluded])
+                    # - ALL results (STUDY level) (technically is further segregated by 'Status' in addition to 'Study')
+                    fname_out = basename_out + suffix_allstudies + '.xlsx'
+                    self.save_to_xlsx(ui, self_move_dir, fname_out, df_output_by_study,
+                                      file_descriptor='ALL RESULTS (EVERY STUDY)')
 
-                    fname_out = basename_out + missing_suffix + '.xlsx'
-                    path_out = os.path.join(dir_out, fname_out)
-                    self.save_to_xlsx(ui, path_out, df_missing, file_descriptor='MISSING ENTRIES')
+                    # - SUCCESSFUL downloads (STUDY level)
+                    df_success = df_output_by_study[df_output_by_study['Status'] == 'DOWNLOADED']
+                    fname_out = basename_out + suffix_success + '.xlsx'
+                    self.save_to_xlsx(ui, self_move_dir, fname_out, df_success,
+                                      file_descriptor='SUCCESSFUL DOWNLOADS')
 
-                    # --- FAILED entries (found in the peer's database but either transfer or local storage failed)
-                    df_failed = df_results[df_results['Status'].str.startswith('FAILED')][headings_out]
-                    fname_out = basename_out + failed_suffix + '.xlsx'
-                    path_out = os.path.join(dir_out, fname_out)
-                    self.save_to_xlsx(ui, path_out, df_failed, file_descriptor='FAILED ENTRIES')
+                    # - UNSUCCESSFUL queries (queries which have zero successful downloads associated with them)
+                    # (may be due to incorrect query or manual user selection/deselection)
+                    #P[P.email.isin(S.email) == False]
+                    df_failure = df_output_by_study[df_output_by_study['Status'] != 'DOWNLOADED']
+                    df_failure = df_failure[~df_failure['Query'].isin(df_success['Query'])]
+                    fname_out = basename_out + suffix_failure + '.xlsx'
+                    self.save_to_xlsx(ui, self_move_dir, fname_out, df_failure,
+                                      file_descriptor='QUERIES WITHOUT ASSOCIATED SUCCESSFUL DOWNLOADS')
 
-                    # --- SUCCESSFUL entries
-                    df_success = df_results[headings_out]
-                    df_success = df_success.merge(
-                        pd.concat([df_ignored, df_deselected, df_missing, df_failed]),
-                        how='left',
-                        on=df_success.columns.values.tolist(),
-                        indicator=True
-                    )
-                    df_success = df_success[df_success['_merge'] == 'left_only'].drop(columns=['_merge'])
-                    fname_out = basename_out + success_suffix + '.xlsx'
-                    path_out = os.path.join(dir_out, fname_out)
-                    self.save_to_xlsx(ui, path_out, df_success, file_descriptor='SUCCESSFUL ENTRIES')
 
-                    # # 8. --- Update our results tree with all the move results
-                    # if sort_yes:
-                    #     df_results = df_results.sort_values(by=sort_yes)
-                    #
-                    # [study_nodes, unique_nodes] = self.parse_query_results_to_study_nodes(df_results)
-                    # self.updateTree(ui, ui.main_window, '_TREE_RESULTS_MAIN_', study_nodes)
-
-                    # 6. --- Update our main table title and descriptor
-                    ui.set_txt(ui.main_window, '_LABEL_RESULTS_MAIN_', '    Query Results')
+                    # 6. --- Update our results descriptor
+                    # num_moves = val['num_moves']
+                    # descriptor = '[TRANSFER] from [%s] to [%s] using [%s]:  [%d/%d] matches updated.' % \
+                    #              (peer_info['peer_name'], dest_info['peer_name'], os.path.basename(load_path),
+                    #               num_moves,
+                    #               len(queries))
+                    # ui.set_txt(ui.main_window, '_DESCRIPTOR_MAIN_', descriptor)
                     num_moves = val['num_moves']
-                    descriptor = '[TRANSFER] from [%s] to [%s] using [%s]:  [%d/%d] matches updated.' % \
-                                 (peer_info['peer_name'], dest_info['peer_name'], os.path.basename(load_path),
-                                  num_moves,
-                                  len(queries))
-                    ui.set_txt(ui.main_window, '_DESCRIPTOR_MAIN_', descriptor)
-
                     ui.popup('Transfer complete\n%d/%d entries updated' % (num_moves, len(queries)))
 
                     # 9. --- Advance phase
@@ -1691,7 +1665,7 @@ class Main:
 
             elif event == '_LOAD_SEARCH_RESULTS_MAIN_':
                 # --- ask what file to load
-                path = ui.popupGetXlsxFile(load_path, title=('Load Input *%s.xlsx File' % search_results_suffix))
+                path = ui.popupGetXlsxFile(load_path, title=('Load Input *%s.xlsx File' % suffix_search_results))
                 if not path:
                     continue
 
@@ -1724,13 +1698,14 @@ class Main:
                 self.updateTree(ui, ui.main_window, '_TREE_RESULTS_MAIN_', study_nodes)
                 num_total_selected_series = 0
 
-                # --- Update our main table title and descriptor
+                # --- Update our results descriptor
+                num_queries = df_results['Query'].nunique()
                 num_missing = len(df_results[df_results['Status'] == 'MISSING'])
-                num_matches = len(df_results) - num_missing
-                ui.set_txt(ui.main_window, '_LABEL_RESULTS_MAIN_', '    Query Results')
-                descriptor = '[LOADED] from [%s]:  ' \
-                             '[%d] search results, [%d] unmatched.' % \
-                             (os.path.basename(load_path), num_matches, num_missing)
+                num_matches = df_results['Study'].nunique() - num_missing
+                descriptor = '%d Quer%s: %d Matching stud%s, %d Unmatched quer%s' % \
+                             (num_queries, 'y' if num_queries == 1 else 'ies',
+                              num_matches, 'y' if num_matches == 1 else 'ies',
+                              num_missing, 'y' if num_missing == 1 else 'ies',)
                 ui.set_txt(ui.main_window, '_DESCRIPTOR_MAIN_', descriptor)
 
                 # --- Note that we will need to update the storage directory name based on this newly loaded input file
@@ -1777,9 +1752,8 @@ class Main:
                 selected_row_key = ui.main_window.Element('_TREE_RESULTS_MAIN_').SelectedRows[0]
                 # we only update the tree if the user clicks on a SERIES node and it is not already in the DOWNLOADED
                 # status
-
-                if (selected_row_key.startswith('SERIES:')) & (unique_nodes[selected_row_key].status !=
-                                                             Status.DOWNLOADED):
+                if (selected_row_key.startswith('SERIES:')) and (unique_nodes[selected_row_key].status !=
+                                                                Status.DOWNLOADED):
                     series_node = unique_nodes[selected_row_key]
                     study_node = unique_nodes[series_node.parent_study_key]
                     # update the backend representations of the series/study amalgamations
@@ -1913,7 +1887,7 @@ class Main:
                 if check_storage_dir:
                     check_storage_dir = False
 
-                    prefix = anon_prefix if anonymize else raw_prefix
+                    prefix = prefix_anon if anonymize else prefix_raw
                     self_move_dir = os.path.join(storage_path,
                                                  prefix + os.path.splitext(os.path.basename(load_path))[0])
                     if os.path.isdir(self_move_dir):
@@ -1930,8 +1904,13 @@ class Main:
 
                     # --- Save the initial search results from the C-FIND to an excel file
                     move_queries_path = os.path.join(
-                        self_move_dir, os.path.basename(self_move_dir) + search_results_suffix + '.xlsx')
-                    self.save_to_xlsx(ui, move_queries_path, df_results, file_descriptor='MOVE QUERIES',
+                        self_move_dir,
+                        )
+                    self.save_to_xlsx(ui,
+                                      self_move_dir,
+                                      os.path.basename(self_move_dir) + suffix_search_results + '.xlsx',
+                                      df_results,
+                                      file_descriptor='MOVE QUERIES',
                                       create_dirs=True)
 
                 # --- set phase
