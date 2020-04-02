@@ -1,5 +1,4 @@
 pysimplegui
-ttkwidgets
 pydicom
 pynetdicom
 pandas

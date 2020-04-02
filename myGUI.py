@@ -4,7 +4,10 @@ if sys.version_info[0] >= 3:
 else:
     import PySimpleGUI27 as sg
 
+import textwrap
+
 from datastruct import Status
+from datastruct import Phase
 
 class GUI:
 
@@ -19,17 +22,47 @@ class GUI:
     selector_layout = None
     advanced_selector_layout = None
 
+    # *******************************
+    # ELEMENT KEYS
+    # *******************************
+
+    # --- high level element groupings that can be made visible/invisible depending on the phase
+    DISPLAY_RESULTS = '_DISPLAY_RESULTS_'
+    DISPLAY_QUERIES = '_DISPLAY_QUERIES_'
+    DISPLAY_NAVIGATION = '_DISPLAY_NAVIGATION_'
+    DISPLAY_LOAD_CHOICE = '_DISPLAY_LOAD_CHOICE_'
+    DISPLAY_LOAD_PARAMETERS = '_DISPLAY_LOAD_PARAMETERS_'
+    DISPLAY_FIND = '_DISPLAY_FIND_'
+    DISPLAY_FILTER = '_DISPLAY_FILTER_'
+    DISPLAY_MOVE = '_DISPLAY_MOVE_'
+
+    # --- individual buttons
+    BUTTON_NEW = '_NEW_MAIN_'
+    BUTTON_OLD = '_OLD_MAIN_'
+    BUTTON_QUERYFILE = '_QUERYFILE_'
+    BUTTON_STORAGEDIR = '_STORAGEDIR_'
+    BUTTON_LOAD_QUERIES = '_LOAD_QUERIES_'
+    BUTTON_LOAD_RESULTS = '_LOAD_SEARCH_RESULTS_MAIN_'
+    BUTTON_FIND = '_FIND_MAIN_'
+    BUTTON_FILTER = '_FILTER_MAIN_'
+    BUTTON_MOVE = '_MOVE_MAIN_'
+    BUTTON_NEXT = '_NEXT_MAIN_'
+    BUTTON_BACK = '_BACK_MAIN_'
+
 
     # *******************************
     # PHASES
     # *******************************
-    # phase names
-    PHASE_LOAD = 0
-    PHASE_FIND = 1
-    PHASE_FILT = 2
-    PHASE_MOVE = 3
-    PHASE_DONE = 4
-    PHASE_LOCK = 5
+
+    # phase limits for navigation (back/next)
+    first_phase = Phase.PHASE_LOAD_CHOICE
+    last_phase = Phase.PHASE_FILT
+
+
+
+    # *******************************
+    # COLORS
+    # *******************************
 
     # default colors
     default_btn_back = 'darkblue'
@@ -39,7 +72,11 @@ class GUI:
     highlight_btn_text = 'black'
     highlight_btn_color = (highlight_btn_text, highlight_btn_back)
 
-    # icons
+
+    # *******************************
+    # ICONS
+    # *******************************
+
     # green check mark
 
     icon_greencheck = 'assets/greencheck16.png'
@@ -203,6 +240,8 @@ class GUI:
         tree_element.Update(treedata)
         return treedata
 
+    def setVisible(self, window, key, visible):
+        window.Element(key).Update(visible=visible)
 
     def enableButton(self, window, key, enabled):
         disabled = not enabled
@@ -212,85 +251,109 @@ class GUI:
         # color is a tuple: (text_color, button_color) ('white' on 'darkblue')
         window.Element(key).Update(button_color=color)
 
-    def set_phase_LOAD(self):
-        # enable/disable
-        self.enableButton(self.main_window, '_LOAD_MAIN_', True)
-        self.enableButton(self.main_window, '_LOAD_SEARCH_RESULTS_MAIN_', True)
-        self.enableButton(self.main_window, '_FIND_MAIN_', False)
-        self.enableButton(self.main_window, '_FILT_MAIN_', False)
-        self.enableButton(self.main_window, '_MOVE_MAIN_', False)
-        # color
-        self.colorButton(self.main_window, '_LOAD_MAIN_', self.highlight_btn_color)
-        self.colorButton(self.main_window, '_FIND_MAIN_')
-        self.colorButton(self.main_window, '_FILT_MAIN_')
-        self.colorButton(self.main_window, '_MOVE_MAIN_')
 
-    def set_phase_FIND(self):
-        # enable/disable
-        self.enableButton(self.main_window, '_LOAD_MAIN_', True)
-        self.enableButton(self.main_window, '_LOAD_SEARCH_RESULTS_MAIN_', True)
-        self.enableButton(self.main_window, '_FIND_MAIN_', True)
-        self.enableButton(self.main_window, '_FILT_MAIN_', False)
-        self.enableButton(self.main_window, '_MOVE_MAIN_', False)
+    def set_phase_LOAD_CHOICE(self, args):
+        # display
+        self.setVisible(self.main_window, self.DISPLAY_LOAD_CHOICE, True)
+        self.setVisible(self.main_window, self.DISPLAY_LOAD_PARAMETERS, False)
+        self.setVisible(self.main_window, self.DISPLAY_QUERIES, False)
+        self.setVisible(self.main_window, self.DISPLAY_FIND, False)
+        self.setVisible(self.main_window, self.DISPLAY_RESULTS, False)
+        self.setVisible(self.main_window, self.DISPLAY_FILTER, False)
+        self.setVisible(self.main_window, self.DISPLAY_MOVE, False)
         # color
-        self.colorButton(self.main_window, '_LOAD_MAIN_')
-        self.colorButton(self.main_window, '_FIND_MAIN_', self.highlight_btn_color)
-        self.colorButton(self.main_window, '_FILT_MAIN_')
-        self.colorButton(self.main_window, '_MOVE_MAIN_')
-    def set_phase_FILT(self):
+        self.colorButton(self.main_window, self.BUTTON_NEW, self.highlight_btn_color)
+        self.colorButton(self.main_window, self.BUTTON_OLD)
         # enable/disable
-        self.enableButton(self.main_window, '_LOAD_MAIN_', True)
-        self.enableButton(self.main_window, '_LOAD_SEARCH_RESULTS_MAIN_', True)
-        self.enableButton(self.main_window, '_FIND_MAIN_', True)
-        self.enableButton(self.main_window, '_FILT_MAIN_', True)
-        self.enableButton(self.main_window, '_MOVE_MAIN_', False)
-        # color
-        self.colorButton(self.main_window, '_LOAD_MAIN_')
-        self.colorButton(self.main_window, '_FIND_MAIN_')
-        self.colorButton(self.main_window, '_FILT_MAIN_', self.highlight_btn_color)
-        self.colorButton(self.main_window, '_MOVE_MAIN_')
-    def set_phase_MOVE(self):
-        # enable/disable
-        self.enableButton(self.main_window, '_LOAD_MAIN_', True)
-        self.enableButton(self.main_window, '_LOAD_SEARCH_RESULTS_MAIN_', True)
-        self.enableButton(self.main_window, '_FIND_MAIN_', True)
-        self.enableButton(self.main_window, '_FILT_MAIN_', True)
-        self.enableButton(self.main_window, '_MOVE_MAIN_', True)
-        # color
-        self.colorButton(self.main_window, '_LOAD_MAIN_')
-        self.colorButton(self.main_window, '_FIND_MAIN_')
-        self.colorButton(self.main_window, '_FILT_MAIN_')
-        self.colorButton(self.main_window, '_MOVE_MAIN_', self.highlight_btn_color)
-    def set_phase_DONE(self):
-        # enable/disable
-        self.enableButton(self.main_window, '_LOAD_MAIN_', True)
-        self.enableButton(self.main_window, '_LOAD_SEARCH_RESULTS_MAIN_', True)
-        self.enableButton(self.main_window, '_FIND_MAIN_', True)
-        self.enableButton(self.main_window, '_FILT_MAIN_', True)
-        self.enableButton(self.main_window, '_MOVE_MAIN_', True)
-        # color
-        self.colorButton(self.main_window, '_LOAD_MAIN_')
-        self.colorButton(self.main_window, '_FIND_MAIN_')
-        self.colorButton(self.main_window, '_FILT_MAIN_')
-        self.colorButton(self.main_window, '_MOVE_MAIN_')
-    def set_phase_LOCK(self):
-        # enable/disable
-        self.enableButton(self.main_window, '_LOAD_MAIN_', False)
-        self.enableButton(self.main_window, '_LOAD_SEARCH_RESULTS_MAIN_', False)
-        self.enableButton(self.main_window, '_FIND_MAIN_', False)
-        #self.enableButton(self.main_window, '_FILT_MAIN_', False)
-        self.enableButton(self.main_window, '_MOVE_MAIN_', False)
+        self.enableButton(self.main_window, self.BUTTON_NEW, True)
+        self.enableButton(self.main_window, self.BUTTON_OLD, True)
 
-    def set_phase(self, phase):
+    def set_phase_LOAD_PARAMETERS(self, new_project):
+        self.setVisible(self.main_window, self.DISPLAY_LOAD_CHOICE, False)
+        self.setVisible(self.main_window, self.DISPLAY_LOAD_PARAMETERS, True)
+        self.setVisible(self.main_window, self.DISPLAY_QUERIES, False)
+        self.setVisible(self.main_window, self.DISPLAY_FIND, False)
+        self.setVisible(self.main_window, self.DISPLAY_RESULTS, False)
+        self.setVisible(self.main_window, self.DISPLAY_FILTER, False)
+        self.setVisible(self.main_window, self.DISPLAY_MOVE, False)
+        # color
+        self.colorButton(self.main_window, self.BUTTON_LOAD_QUERIES, self.highlight_btn_color)
+        # enable/disable
+        self.enableButton(self.main_window, self.BUTTON_LOAD_QUERIES, True)
+
+    def set_phase_FIND(self, args):
+        self.setVisible(self.main_window, self.DISPLAY_LOAD_CHOICE, False)
+        self.setVisible(self.main_window, self.DISPLAY_LOAD_PARAMETERS, False)
+        self.setVisible(self.main_window, self.DISPLAY_QUERIES, True)
+        self.setVisible(self.main_window, self.DISPLAY_FIND, True)
+        self.setVisible(self.main_window, self.DISPLAY_RESULTS, False)
+        self.setVisible(self.main_window, self.DISPLAY_FILTER, False)
+        self.setVisible(self.main_window, self.DISPLAY_MOVE, False)
+        # color
+        self.colorButton(self.main_window, self.BUTTON_FIND, self.highlight_btn_color)
+        # enable/disable
+        self.enableButton(self.main_window, self.BUTTON_FIND, True)
+
+    def set_phase_FILT(self, args):
+        self.setVisible(self.main_window, self.DISPLAY_LOAD_CHOICE, False)
+        self.setVisible(self.main_window, self.DISPLAY_LOAD_PARAMETERS, False)
+        self.setVisible(self.main_window, self.DISPLAY_QUERIES, False)
+        self.setVisible(self.main_window, self.DISPLAY_FIND, False)
+        self.setVisible(self.main_window, self.DISPLAY_RESULTS, True)
+        self.setVisible(self.main_window, self.DISPLAY_FILTER, True)
+        self.setVisible(self.main_window, self.DISPLAY_MOVE, False)
+        # color
+        self.colorButton(self.main_window, self.BUTTON_FILTER, self.highlight_btn_color)
+        # enable/disable
+        self.enableButton(self.main_window, self.BUTTON_FILTER, True)
+
+    def set_phase_MOVE(self, args):
+        self.setVisible(self.main_window, self.DISPLAY_LOAD_CHOICE, False)
+        self.setVisible(self.main_window, self.DISPLAY_LOAD_PARAMETERS, False)
+        self.setVisible(self.main_window, self.DISPLAY_QUERIES, False)
+        self.setVisible(self.main_window, self.DISPLAY_FIND, False)
+        self.setVisible(self.main_window, self.DISPLAY_RESULTS, True)
+        self.setVisible(self.main_window, self.DISPLAY_FILTER, False)
+        self.setVisible(self.main_window, self.DISPLAY_MOVE, True)
+        # color
+        self.colorButton(self.main_window, self.BUTTON_MOVE, self.highlight_btn_color)
+        # enable/disable
+        self.enableButton(self.main_window, self.BUTTON_MOVE, True)
+
+    def set_phase_LOCK(self, args):
+        # enable/disable
+        self.enableButton(self.main_window, self.BUTTON_NEW, False)
+        self.enableButton(self.main_window, self.BUTTON_OLD, False)
+        self.enableButton(self.main_window, self.BUTTON_LOAD_QUERIES, False)
+        self.enableButton(self.main_window, self.BUTTON_FIND, False)
+        self.enableButton(self.main_window, self.BUTTON_FILTER, False)
+        self.enableButton(self.main_window, self.BUTTON_MOVE, False)
+
+    def set_phase(self, phase, furthest_phase, args=None):
+        # --- Display different elements depending on the phase
         switcher = {
-            self.PHASE_LOAD: self.set_phase_LOAD,
-            self.PHASE_FIND: self.set_phase_FIND,
-            self.PHASE_FILT: self.set_phase_FILT,
-            self.PHASE_MOVE: self.set_phase_MOVE,
-            self.PHASE_DONE: self.set_phase_DONE,
-            self.PHASE_LOCK: self.set_phase_LOCK
+            Phase.PHASE_LOAD_CHOICE: self.set_phase_LOAD_CHOICE,
+            Phase.PHASE_LOAD_PARAMETERS: self.set_phase_LOAD_PARAMETERS,
+            Phase.PHASE_FIND: self.set_phase_FIND,
+            Phase.PHASE_FILT: self.set_phase_FILT,
+            Phase.PHASE_MOVE: self.set_phase_MOVE,
+            Phase.PHASE_LOCK: self.set_phase_LOCK
         }
-        switcher[phase]()
+        switcher[phase](args)
+
+        # --- Navigation buttons depend on the phase
+
+        # - Enable/disable navigation
+        # special phases (e.g. PHASE_LOCK) are hidden in front of self.first_phase, so navigation can never
+        # accidentally get there
+        self.main_window.Element(self.BUTTON_BACK).Update(disabled=
+                                                          (phase.value <= self.first_phase.value))
+        self.main_window.Element(self.BUTTON_NEXT).Update(disabled=
+                                                          (phase.value >= furthest_phase.value) or
+                                                          (phase.value < self.first_phase.value) or
+                                                          (phase.value >= self.last_phase.value))
+
+
 
     # *******************************
     # POPUP FUNCTIONS
@@ -928,10 +991,6 @@ class GUI:
 
         # ------ TABLE: raw entries loaded from a file
         text_table_raw_main = sg.Text('  Studies of Interest (Queries)', text_color='darkblue', font='Any 11')
-        txt_load_main = sg.Input('', visible=False, do_not_clear=False, enable_events=True, key='_TXT_LOAD_MAIN_')
-        btn_load_main = sg.Button('1. Load Queries',
-                                  button_color=self.default_btn_color,
-                                  key='_LOAD_MAIN_')
         raw_padding = padding_pretty_raw_main if padding_pretty_raw_main else [' ' * 6] * len(headings_pretty_raw_main)
         table_raw_main = sg.Table(
             values=[raw_padding],
@@ -945,13 +1004,17 @@ class GUI:
             key='_TABLE_RAW_MAIN_'
         )
         coltable_raw_main = sg.Column([[table_raw_main]],
-                                      size=(300, 300),
+                                      size=(575, None),
                                       scrollable=True
                                       )
-        col_table_raw_main = sg.Column([
-            [text_table_raw_main, btn_load_main, txt_load_main],
-            [coltable_raw_main]
-        ])
+        col_table_raw_main = sg.Column(
+            [
+                [text_table_raw_main],
+                [coltable_raw_main]
+            ],
+            visible=False,
+            key=self.DISPLAY_QUERIES
+        )
 
         # ------ TABLE: query results
         text_table_results_main = sg.Text('  Query Results', text_color='darkblue', font='Any 11',
@@ -962,8 +1025,9 @@ class GUI:
         btn_load_find_results_main = sg.Button('Load Snapshot',
                                   size=(12, 1),
                                   button_color=self.default_btn_color,
-                                  key='_LOAD_SEARCH_RESULTS_MAIN_')
-        text_descriptor_main = sg.Text('', size=(45, 1), key='_DESCRIPTOR_MAIN_')
+                                  visible=False,
+                                  key=self.BUTTON_LOAD_RESULTS)
+        text_descriptor_main = sg.Text('', size=(55, 1), key='_DESCRIPTOR_MAIN_')
 
         #results_padding = padding_pretty_results_main if padding_pretty_results_main else [''] * len(
         #    headings_pretty_results_main)
@@ -976,12 +1040,12 @@ class GUI:
         )
         tree_results_main = sg.Tree(
             data=filler_treedata,
-            headings=['   Status   '],
+            headings=['# of Studies'],
             col0_width=36,
             def_col_width=25,
             select_mode='browse',
             num_rows=15,
-            justification='center',
+            justification='left',
             enable_events=True,
             key='_TREE_RESULTS_MAIN_'
         )
@@ -990,20 +1054,92 @@ class GUI:
                                           scrollable=True
                                           )
 
-        col_table_results_main = sg.Column([
-            [text_table_results_main, btn_load_find_results_main, text_descriptor_main], #btn_sort_main],
-            [coltable_results_main],
-        ])
+        col_table_results_main = sg.Column(
+            [
+                [text_table_results_main, btn_load_find_results_main, text_descriptor_main], #btn_sort_main],
+                [coltable_results_main],
+            ],
+            visible=False,
+            key=self.DISPLAY_RESULTS
+        )
 
-        # ------ BUTTONS and OPTIONS: Find, Move
-        btn_find_main = sg.Button('2. QUERY DATABASE',
+        # ------ BUTTONS, INPUTS, and OPTIONS: Load, Find, Move
+
+        # ---
+        btn_loadnew_main = sg.Button('Load New Queries',
+                                     size=(18, 1),
+                                     button_color=self.default_btn_color,
+                                     key=self.BUTTON_NEW)
+        str_loadnew = 'Choose this option if you have a completely new set of studies to download.'
+        txt_loadnew_main = sg.Text('\n'.join(textwrap.wrap(str_loadnew, 90)))
+        btn_loadold_main = sg.Button('Load Updated Queries for Existing Project',
+                                          size=(35, 1),
+                                          button_color=self.default_btn_color,
+                                          key=self.BUTTON_OLD)
+        str_loadold = 'Choose this option if you are returning to an existing project (typically with an ' \
+                      'updated/addended query file). You will need to specify the project directory that you ' \
+                      'previously downloaded files to (in particular, the SNAPSHOT file in that directory will be ' \
+                      'important for validation purposes).'
+        txt_loadold_main = sg.Text('\n'.join(textwrap.wrap(str_loadold, 90)))
+        col_loadchoice_main = sg.Column(
+            [
+                [self.spacer(sz=(1, 1))],
+                [btn_loadnew_main],
+                [txt_loadnew_main],
+                [self.spacer(sz=(1, 1))],
+                [btn_loadold_main],
+                [txt_loadold_main]
+            ],
+            key=self.DISPLAY_LOAD_CHOICE
+        )
+
+
+        # --- load parameters
+
+        label_loadqueryfile = sg.Text('Query File (Studies)', text_color='darkblue', font='Any 11')
+        txt_loadqueryfile = sg.Input('', size=(80, 1), key='_TXT_LOADQUERIES_')
+        btn_loadqueryfile = sg.Button('Browse', key=self.BUTTON_QUERYFILE)
+        str_loadqueryfile = 'See "./xlsx/_TEMPLATE_.xlsx" for a sample input file. The single most specific study ' \
+                            'identifier to provide is accession number. Failing that, a combination of MRN, ' \
+                            'study description, and date usually suffice. Be wary of making your queries too broad.'
+        txt_instructions_loadqueryfile = sg.Text('\n'.join(textwrap.wrap(str_loadqueryfile, 80)))
+
+        label_loaddir = sg.Text('Project Storage Directory', text_color='darkblue', font='Any 11')
+        txt_loaddir = sg.Input('', size=(80, 1), key='_TXT_LOADDIR_')
+        btn_loaddir = sg.Button('Browse', key=self.BUTTON_STORAGEDIR)
+        str_loaddir = 'Create (if new) or select (if returning) a directory to store downloaded studies from this ' \
+                      'query file.'
+        txt_instructions_loaddir = sg.Text('\n'.join(textwrap.wrap(str_loaddir, 80)))
+
+        btn_parsequeries = sg.Button('Load Queries From File', key=self.BUTTON_LOAD_QUERIES)
+
+        col_loadparameters_main = sg.Column(
+            [
+                [self.spacer(sz=(1, 1))],
+                # Queries file
+                [label_loadqueryfile, btn_loadqueryfile],
+                [txt_loadqueryfile],
+                [txt_instructions_loadqueryfile],
+                [self.spacer(sz=(1, 1))],
+                # Storage Directory
+                [label_loaddir, btn_loaddir],
+                [txt_loaddir],
+                [txt_instructions_loaddir],
+                [self.spacer(sz=(1, 2))],
+                [btn_parsequeries]
+            ],
+            visible=False,
+            key=self.DISPLAY_LOAD_PARAMETERS
+        )
+
+        btn_find_main = sg.Button('Query Database',
                                   size=(20, 1),
                                   button_color=self.default_btn_color,
-                                  key='_FIND_MAIN_')
-        btn_move_main = sg.Button('4. TRANSFER STUDIES',
+                                  key=self.BUTTON_FIND)
+        btn_move_main = sg.Button('Transfer Studies',
                                   size=(20, 1),
                                   button_color=self.default_btn_color,
-                                  key='_MOVE_MAIN_')
+                                  key=self.BUTTON_MOVE)
         checkbox_exactstudy_MAIN = sg.Checkbox('Exact Study Description', default=False,
                                                key='_EXACT_MATCH_STUDYDESCRIPTION_')
         checkbox_exactseries_MAIN = sg.Checkbox('Exact Series Description', default=False,
@@ -1019,15 +1155,19 @@ class GUI:
         """
 
         # ------ COMBO: Source Peer
-        text_src_main = sg.Text('Source (Peer)', text_color='darkblue', font='Any 11')
+        text_src_main = sg.Text('Database', text_color='darkblue', font='Any 11')
         combo_src_main = sg.Combo([], size=(21, 1), readonly=True, key='_COMBO_SRC_MAIN_')
-        col_src_main = sg.Column([
-            [text_src_main],
-            [combo_src_main],
-            [checkbox_exactstudy_MAIN],
-            [checkbox_exactseries_MAIN],
-            [btn_find_main],
-        ])
+        col_src_main = sg.Column(
+            [
+                [text_src_main],
+                [combo_src_main],
+                [checkbox_exactstudy_MAIN],
+                [checkbox_exactseries_MAIN],
+                [btn_find_main]
+            ],
+            visible=False,
+            key=self.DISPLAY_FIND
+        )
 
         col_arrow_main_fromsearchtofilter = sg.Column([
             [self.spacer()],
@@ -1042,13 +1182,17 @@ class GUI:
         # ------ COMBO: Destination Peer
         text_dest_main = sg.Text('Destination (Peer)', text_color='darkblue', font='Any 11')
         combo_dest_main = sg.Combo([], size=(21, 1), readonly=True, key='_COMBO_DEST_MAIN_')
-        col_dest_main = sg.Column([
-            [text_dest_main],
-            [combo_dest_main],
-            [checkbox_skip_MAIN],
-            [checkbox_anonymize_MAIN],
-            [btn_move_main],
-        ])
+        col_dest_main = sg.Column(
+            [
+                [text_dest_main],
+                [combo_dest_main],
+                [checkbox_skip_MAIN],
+                [checkbox_anonymize_MAIN],
+                [btn_move_main]
+            ],
+            visible=False,
+            key=self.DISPLAY_MOVE
+        )
 
         # ------ C-MOVE STUDY/SERIES SELECTION
         text_dest_btns_main = sg.Text('Selection Filters', text_color='darkblue', font='Any 11')
@@ -1057,26 +1201,55 @@ class GUI:
                                        size=(21, 1),
                                        readonly=True,
                                        key='_COMBO_FILT_SIMPLE_MAIN_')
-        btn_value_selector_simple = sg.Button('3. SELECT VALUES',
+        btn_value_selector_simple = sg.Button('SELECT VALUES',
                                            size=(20, 1),
                                            button_color=self.default_btn_color,
                                            disabled=True,
                                            key='_FILT_SIMPLE_MAIN_')
-        btn_value_selector = sg.Button('3. SELECT STUDIES/SERIES',
+        btn_value_selector = sg.Button('Confirm Selected Series',
                                        size=(24, 1),
                                        button_color=self.default_btn_color,
-                                       disabled=True,
-                                       key='_FILT_MAIN_')
+                                       key=self.BUTTON_FILTER)
 
-        col_selection_btn_main = sg.Column([
-            [text_dest_btns_main],
-            [btn_value_selector]
-        ])
+        col_selection_btn_main = sg.Column(
+            [
+                [text_dest_btns_main],
+                [btn_value_selector]
+            ],
+            visible=False,
+            key=self.DISPLAY_FILTER
+        )
+
+        # ------ Navigation buttons
+        btn_back = sg.Button('Back',
+                             size=(10, 1),
+                             button_color=self.default_btn_color,
+                             disabled=True,
+                             key=self.BUTTON_BACK)
+        btn_next = sg.Button('Next',
+                             size=(10, 1),
+                             button_color=self.default_btn_color,
+                             disabled=True,
+                             key=self.BUTTON_NEXT)
+        col_navigation = sg.Column(
+            [
+                [self.spacer()],
+                [btn_back, btn_next]
+            ],
+            key=self.DISPLAY_NAVIGATION
+        )
+
 
         # ------ ASSEMBLE:
+        col_tab_main = sg.Column(
+            [
+                [col_loadchoice_main, col_loadparameters_main, col_table_raw_main, col_table_results_main],
+                [col_src_main, col_selection_btn_main, col_dest_main],
+            ]
+        )
         tablayout_main = [
-            [col_table_raw_main, col_table_results_main],
-            [col_src_main, col_selection_btn_main, col_dest_main]
+            [col_tab_main, self.spacer(sz=(0, 31))],
+            [col_navigation]
         ]
         tab_main = sg.Tab('Main', tablayout_main)
 
@@ -1146,7 +1319,6 @@ class GUI:
         frame_peers_cfg = sg.Frame('Peers', framelayout_peers_cfg, font='Any 11')
 
         col_settings_cfg = sg.Column([
-            #[frame_local_cfg],
             [frame_peers_cfg]
         ])
 
@@ -1329,7 +1501,7 @@ class GUI:
                                                  padding_pretty_results_main=padding_pretty_results_main,
                                                  default_filter_main=default_filter_main)
 
-
+        self.set_phase(Phase.PHASE_LOAD_CHOICE, Phase.PHASE_LOAD_CHOICE)
 
         # *******************************
         # THEMES (they're all ugly)

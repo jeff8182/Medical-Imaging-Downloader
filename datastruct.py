@@ -43,5 +43,11 @@ class StudyDescriptionNode:
 
         self.series_nodes[series_node.unique_key] = series_node
 
-
-
+class Phase(enum.Enum):
+    PHASE_LOCK = 0
+    PHASE_LOAD_CHOICE = 1
+    PHASE_LOAD_PARAMETERS = 2
+    PHASE_FIND = 3
+    PHASE_FILT = 4
+    PHASE_MOVE = 5
+    PHASE_DONE = 6

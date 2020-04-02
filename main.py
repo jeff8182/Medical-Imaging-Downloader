@@ -2,6 +2,7 @@ import myGUI
 import pacs
 import datastruct
 from datastruct import Status
+from datastruct import Phase
 
 import traceback
 import os
@@ -36,6 +37,11 @@ class Main:
     # --- Our own identifier gets special treatment (e.g. cannot delete it from the list of peers)
     SELF = '<SELF>'
 
+    phases = [p for p in Phase]
+    cur_phase = Phase.PHASE_LOAD_CHOICE
+    furthest_phase = Phase.PHASE_LOAD_CHOICE
+    new_project = True
+
     # --- Formatting functions
     # dicts containing functions for value formatting/mapping when we (1) initially load an excel file, (2) convert
     # dataframe values to tag values, and (3) convert tag values to dataframe values
@@ -69,8 +75,8 @@ class Main:
         "default_column_selection": "StudyDescription",
         "default_prefix_anon": "ANON_",
         "default_prefix_raw": "RAW_",
-        "default_suffix_initial_queries": "_SearchQueries",
-        "default_suffix_search_results": "_SearchResults_SNAPSHOT",
+        "default_suffix_initial_queries": "_InitialSearchQueries",
+        "default_suffix_search_results": "_InitialSearchResults_SNAPSHOT",
         "default_suffix_success": "_SuccessfulDownloads",
         "default_suffix_failure": "_UnsatisfiedQueries",
         "default_suffix_allstudies": "_AllResults_ByStudies",
@@ -326,6 +332,10 @@ class Main:
     # CLASS INIT
     # ==================================================================
     def __init__(self):
+
+        # --- starting phase
+        self.cur_phase = Phase.PHASE_LOAD_CHOICE
+
         # --- (dataframe value) to (tag), when we prep values to send a query
         self.parse_to_tag_func = {
             'PatientID': self.parse_mrn,
@@ -904,6 +914,13 @@ class Main:
             df_template.to_excel(writer, 'Sheet1', index=False)
             writer.save()
 
+    def updatePhase(self, ui, phase, reset_progression=False, args=None):
+        self.cur_phase = phase
+        if (self.cur_phase.value > self.furthest_phase.value) or reset_progression:
+            self.furthest_phase = self.cur_phase
+
+        ui.set_phase(self.cur_phase, self.furthest_phase, args=args)
+
     def updateTable(self, ui, window, key, tbl, headings=None):
         ui.set_table(window, key, tbl, headings)
 
@@ -916,14 +933,17 @@ class Main:
         # do not display any unfound queries (represented by rows where (df['Status'] == 'MISSING')
         df = df[df['Status'] != 'MISSING']
 
+        if df.empty:
+            return [{}, {}]
+
         # aggregate all seriesdescriptions associated with each study
-        df = df.sort_values(['Modality', 'Study', 'StudyDescription', 'SeriesDescription']).groupby(
-            ['Modality', 'Study', 'StudyDescription'])[
-            'SeriesDescription'].agg('~~~'.join).reset_index()
+        df = df.sort_values(['StudyDescription', 'SeriesDescription', 'Study']).groupby(
+            ['StudyDescription', 'Study'])[
+            'SeriesDescription'].agg(';'.join).reset_index()
 
         # sort and convert to a dict for parsing
-        datadict = df[['Modality', 'StudyDescription', 'SeriesDescription']]. \
-            sort_values(['Modality', 'StudyDescription', 'SeriesDescription']). \
+        datadict = df[['StudyDescription', 'SeriesDescription']]. \
+            sort_values(['StudyDescription', 'SeriesDescription']). \
             to_dict(orient='index')
 
         # track unique study-series keys, since we may encounter multiple duplicate series/study descriptions.
@@ -942,7 +962,7 @@ class Main:
                 study_node = datastruct.StudyDescriptionNode(row['StudyDescription'], studyseries_unique_key)
 
                 # --- SERIES NODES associated with this study node
-                for seriesd in list(filter(None, row['SeriesDescription'].split('~~~'))):
+                for seriesd in list(filter(None, row['SeriesDescription'].split(';'))):
                     series_unique_key = 'SERIES:' + seriesd + '___' + studyseries_unique_key
                     # create series node
                     series_node = datastruct.SeriesDescriptionNode(seriesd, series_unique_key)
@@ -993,7 +1013,7 @@ class Main:
                       'DESTINATION:   %s\n' \
                       '\nTransferring %d out of %d...\n' \
                       '\nStudy #: %s\nStudy: %s\nSeries: %s' \
-                      '\n\n\nCOMPLETED TRANSFERS:'% \
+                      '\n\n\nCOMPLETED TRANSFERS:' % \
                       (peer_info['peer_name'],
                        dest_info['peer_name'],
                        i + 1,
@@ -1090,9 +1110,9 @@ class Main:
                 [series_stored, series_passed, message] = moved_studyuids[entry]
                 (cur_studyuid, cur_seriesuid) = entry
                 [study_stored, study_passed] = moved_studyuids[cur_studyuid]
-                #prefix = 'DOWNLOADED:' if message is None else message + ': '
-                #counts = '%d/%d stored, %d/%d ignored' % (series_stored, study_stored, series_passed, study_passed)
-                #status = prefix + counts
+                # prefix = 'DOWNLOADED:' if message is None else message + ': '
+                # counts = '%d/%d stored, %d/%d ignored' % (series_stored, study_stored, series_passed, study_passed)
+                # status = prefix + counts
                 status = message if message else 'DOWNLOADED'
                 df_results.loc[
                     (df_results['StudyInstanceUID'] == cur_studyuid) &
@@ -1340,11 +1360,12 @@ class Main:
         unique_nodes = {}
         num_total_selected_series = 0
 
+        # --- Current PHASE
+        self.cur_phase = Phase.PHASE_LOAD_CHOICE
+
         # --- Variables to track the current storage directory. Updated every time a download is triggered for the
         # first time after loading a new input xlsx file
         self_move_dir = None
-        check_storage_dir = True
-
 
         # --- START THE UI
         ui = myGUI.GUI()
@@ -1377,10 +1398,10 @@ class Main:
         # --- Local storage directory
         ui.set_txt(ui.main_window, '_DIR_LOCAL_CFG_', storage_path)
 
-        # --- Phase (0-3: LOAD, FIND, MOVE, DONE)
+        # --- Phase (broadly speaking, phase order goes LOAD, FIND, FILTER, MOVE)
         # There is a necessary chain of steps to go through to successfully transfer an image. If the chain is broken or
         # done out of order, it may need to reset
-        ui.set_phase(ui.PHASE_LOAD)
+        self.updatePhase(ui, ui.first_phase)
 
         # *******************************
         # PAC (netcode, DICOM stuff)
@@ -1431,7 +1452,7 @@ class Main:
 
                     # confirm query results
                     if not all_query_results:
-                        ui.set_phase(ui.PHASE_FIND)
+                        self.updatePhase(ui, Phase.PHASE_FIND)
                         continue
 
                     # ------------ Convert to dataframe and standardize
@@ -1446,11 +1467,33 @@ class Main:
                         traceback.print_stack()
                         ui.popupError('***ERROR***\nFailed to parse C-FIND QUERIES:\n%s - %s' %
                                       (type(err).__name__, err))
-                        ui.set_phase(ui.PHASE_FIND)
+                        self.updatePhase(ui, Phase.PHASE_FIND)
                         continue
 
                     # --- Lock in df_results
                     df_results = df_results_temp
+
+
+                    # --- Save the search queries to an excel file
+                    # - INITIAL QUERIES (a lightly processed version of most basic user-passed-in queries used for
+                    # the initial search), with associated automatically assigned query numbering that is propagated
+                    # forward in the search/transfer result excel files
+                    basename_out = os.path.basename(self_move_dir)
+                    self.save_to_xlsx(ui,
+                                      self_move_dir,
+                                      basename_out + suffix_initial_queries + '.xlsx',
+                                      df_queries,
+                                      file_descriptor='INITIAL SEARCH QUERIES',
+                                      create_dirs=True)
+
+                    # - Save the search results to an excel file
+                    self.save_to_xlsx(ui,
+                                      self_move_dir,
+                                      basename_out + suffix_search_results + '.xlsx',
+                                      df_results,
+                                      file_descriptor='INITIAL SEARCH RESULTS',
+                                      create_dirs=True)
+
 
                     # ------- ESTABLISH ANONYMIZATION INDEXES BY PER-STUDY BASIS
                     # THIS IS THE ONLY TIME THAT WE RESET THE INDEX, so the index and resultant anonymization mapping
@@ -1468,15 +1511,6 @@ class Main:
                     if sort_yes:
                         df_results = df_results.sort_values(by=sort_yes)
 
-                    # --- generate default study/series filters
-                    # selections = self.generate_selections(df_results)
-                    # dual_selections = {}
-                    #
-                    # # --- push to the results tree
-                    # filtered_results = self.apply_dual_selections(df_results, dual_selections, ALL_PREFIX,
-                    #                                               reestablish_numbering=True,
-                    #                                               ordering=results_table_headings)
-
                     [study_nodes, unique_nodes] = self.parse_query_results_to_study_nodes(df_results)
                     self.updateTree(ui, ui.main_window, '_TREE_RESULTS_MAIN_', study_nodes)
                     # we start with a blank slate, with no studies/series selected
@@ -1484,33 +1518,30 @@ class Main:
 
                     # --- Update our results descriptor
                     num_queries = df_results['Query'].nunique()
+                    num_matched = df_results[df_results['Status'] == 'FOUND']['Query'].nunique()
                     num_missing = len(df_results[df_results['Status'] == 'MISSING'])
                     num_matches = df_results['Study'].nunique() - num_missing
-                    descriptor = '%d Quer%s: %d Matching stud%s, %d Unmatched quer%s' % \
+                    descriptor = '%d Quer%s: %d matching stud%s, %d matched quer%s, %d unmatched quer%s' % \
                                  (num_queries, 'y' if num_queries == 1 else 'ies',
                                   num_matches, 'y' if num_matches == 1 else 'ies',
+                                  num_matched, 'y' if num_matched == 1 else 'ies',
                                   num_missing, 'y' if num_missing == 1 else 'ies',)
                     ui.set_txt(ui.main_window, '_DESCRIPTOR_MAIN_', descriptor)
 
-                    # --- Save the find results to an excel file
-                    splt = os.path.splitext(os.path.basename(load_path))
-                    basename_no_ext = splt[0]
-                    ext = splt[1]
-                    self.save_to_xlsx(ui,
-                                      xlsx_dir, basename_no_ext + suffix_search_results + ext,
-                                      df_results,
-                                      file_descriptor='SEARCH RESULTS',
-                                      create_dirs=True)
-
                     # --- Announce the good news
-                    ui.popup('Search Complete\n\n%d Quer%s:\n%d Stud%s found\n%d Unmatched quer%s' % (
+                    ui.popup('Search Complete\n\n'
+                             '%d Quer%s:\n'
+                             '%d matching stud%s found\n'
+                             '%d matched quer%s\n'
+                             '%d unmatched quer%s' % (
                         (num_queries, 'y' if num_queries == 1 else 'ies',
                          num_matches, 'y' if num_matches == 1 else 'ies',
+                         num_matched, 'y' if num_matched == 1 else 'ies',
                          num_missing, 'y' if num_missing == 1 else 'ies',)
                     ))
 
                     # --- advance the phase
-                    ui.set_phase(ui.PHASE_FILT)
+                    self.updatePhase(ui, Phase.PHASE_FILT)
 
                 # triggered when the async C-MOVES have all completed
                 elif key == '_T_MOVES_DONE_':
@@ -1519,7 +1550,7 @@ class Main:
                     # directory, then something went catastrophically wrong and absolutely nothing
                     # got done.
                     if not os.path.isdir(self_move_dir):
-                        ui.set_phase(ui.PHASE_MOVE)
+                        self.updatePhase(ui, Phase.PHASE_MOVE)
                         continue
 
                     # -- pull the resultant dataframe with updated statuses
@@ -1531,23 +1562,13 @@ class Main:
                     headings_out = ['Study', 'Status', 'Query'] + legend_tags
                     basename_out = os.path.basename(self_move_dir)
 
-                    # --- INITIAL QUERIES (e.g. the most basic user-passed-in queries used for the initial search),
-                    # with associated automatically assigned query numbering that is propagated forward in the
-                    # search/transfer result excel files
-                    if df_queries is not None:
-                        df_initial_queries = df_queries
-                        fname_out = basename_out + suffix_initial_queries + '.xlsx'
-                        self.save_to_xlsx(ui, self_move_dir, fname_out, df_initial_queries, file_descriptor='INITIAL '
-                                                                                                       'QUERIES')
-
-
                     # --- FIND/MOVE RESULTS
 
                     # - squish seriesdescriptions into one row as necessary
                     df_output = df_results[headings_out]
                     headings_out_no_series = [x for x in headings_out if 'Series' not in x]
-                    df_output_by_study = df_output.groupby(headings_out_no_series)['SeriesDescription']\
-                        .agg('+'.join).reset_index()
+                    df_output_by_study = df_output.groupby(headings_out_no_series)['SeriesDescription'] \
+                        .agg(';'.join).reset_index()
 
                     # - ALL results (SERIES level, essentially displaying every piece of data we have, as granular as
                     # we can get)
@@ -1568,13 +1589,12 @@ class Main:
 
                     # - UNSUCCESSFUL queries (queries which have zero successful downloads associated with them)
                     # (may be due to incorrect query or manual user selection/deselection)
-                    #P[P.email.isin(S.email) == False]
+                    # P[P.email.isin(S.email) == False]
                     df_failure = df_output_by_study[df_output_by_study['Status'] != 'DOWNLOADED']
                     df_failure = df_failure[~df_failure['Query'].isin(df_success['Query'])]
                     fname_out = basename_out + suffix_failure + '.xlsx'
                     self.save_to_xlsx(ui, self_move_dir, fname_out, df_failure,
                                       file_descriptor='QUERIES WITHOUT ASSOCIATED SUCCESSFUL DOWNLOADS')
-
 
                     # 6. --- Update our results descriptor
                     # num_moves = val['num_moves']
@@ -1584,10 +1604,10 @@ class Main:
                     #               len(queries))
                     # ui.set_txt(ui.main_window, '_DESCRIPTOR_MAIN_', descriptor)
                     num_moves = val['num_moves']
-                    ui.popup('Transfer complete\n%d/%d entries updated' % (num_moves, len(queries)))
+                    ui.popup('Transfer Finished\n%d/%d entries updated' % (num_moves, len(queries)))
 
                     # 9. --- Advance phase
-                    ui.set_phase(ui.PHASE_DONE)
+                    # self.updatePhase(ui, Phase.PHASE_DONE)
 
             # ---------------
             # MAIN TAB EVENTS
@@ -1597,12 +1617,83 @@ class Main:
                 # Changing tabs will also send this event == ''
                 pass
 
-            elif event == '_LOAD_MAIN_':
+            elif event == ui.BUTTON_BACK:
+                idx = self.phases.index(self.cur_phase)
+                self.updatePhase(ui, self.phases[idx-1])
 
-                # --- ask what file to load
+            elif event == ui.BUTTON_NEXT:
+                idx = self.phases.index(self.cur_phase)
+                self.updatePhase(ui, self.phases[idx+1])
+
+            elif event == ui.BUTTON_NEW:
+                self.new_project = True
+                self.updatePhase(ui,
+                                 Phase.PHASE_LOAD_PARAMETERS,
+                                 reset_progression=True,
+                                 args=self.new_project)
+
+            elif event == ui.BUTTON_OLD:
+                self.new_project = False
+                self.updatePhase(ui,
+                                 Phase.PHASE_LOAD_PARAMETERS,
+                                 reset_progression=True,
+                                 args=self.new_project)
+
+            elif event == ui.BUTTON_QUERYFILE:
                 path = ui.popupGetXlsxFile(load_path)
+
                 if not path:
                     continue
+
+                ui.set_txt(ui.main_window, '_TXT_LOADQUERIES_', path)
+
+                # If loading a new query file, autogenerate a storage directory name based on the query file name.
+                # Append numbers as necessary to get a valid new folder name.
+                if self.new_project:
+                    autogen_storagedir = storage_path if os.path.isdir(
+                        storage_path) else os.path.dirname(
+                        storage_path)
+                    autogen_storagedir = os.path.join(autogen_storagedir, os.path.splitext(os.path.basename(path))[0])
+                    if os.path.isdir(autogen_storagedir):
+                        dir_dirname = os.path.dirname(autogen_storagedir)
+                        dir_basename = os.path.basename(autogen_storagedir)
+                        autogen_storagedir = os.path.join(dir_dirname, dir_basename)
+                        new_dir = autogen_storagedir
+                        i = 1
+                        # append numbers if necessary
+                        while os.path.isdir(new_dir):
+                            new_dir = '%s(%d)' % (autogen_storagedir, i)
+                            i += 1
+                        autogen_storagedir = new_dir
+
+                    ui.set_txt(ui.main_window, '_TXT_LOADDIR_', autogen_storagedir)
+
+
+            elif event == ui.BUTTON_STORAGEDIR:
+                path = ui.popupGetFolder(title='Project Storage Directory',
+                                         default_path=storage_path,
+                                         initial_folder=storage_path if os.path.isdir(
+                                             storage_path) else os.path.dirname(
+                                             storage_path)
+                                         )
+
+                if not path:
+                    continue
+
+                ui.set_txt(ui.main_window, '_TXT_LOADDIR_', path)
+
+            elif event == ui.BUTTON_LOAD_QUERIES:
+                path = values['_TXT_LOADQUERIES_']
+                storage_dir = values['_TXT_LOADDIR_']
+                if not path or not storage_dir:
+                    ui.popupError('Please enter valid values for both "Query File" and "Project Storage Directory".')
+                    continue
+
+                ######################################################################################################
+                # TODO DEAL WITH OLD PROJECT VALIDATION OH GOD
+                ######################################################################################################
+
+                self_move_dir = storage_dir
 
                 # --- Load excel file
                 load_path = path
@@ -1628,7 +1719,7 @@ class Main:
                 # or the user-defined query numbering column is empty), then just assign query numbering in the
                 # order the queries were read in.
                 try:
-                    print(df_queries_temp['Query'].astype(int))
+                    df_queries_temp['Query'].astype(int)
 
                 except ValueError as err:
                     df_queries_temp.index += 1
@@ -1655,15 +1746,11 @@ class Main:
                 headings_queries = df_queries_valid.columns.tolist()
                 self.updateTable(ui, ui.main_window, '_TABLE_RAW_MAIN_', tbl_queries, headings=headings_queries)
 
-                # --- Note that we will need to update the storage directory name based on this newly loaded input file
-                check_storage_dir = True
-
                 # --- Advance the stage
                 if tbl_queries:
-                    ui.set_phase(ui.PHASE_FIND)
+                    self.updatePhase(ui, Phase.PHASE_FIND, reset_progression=True)
 
-
-            elif event == '_LOAD_SEARCH_RESULTS_MAIN_':
+            elif event == ui.BUTTON_LOAD_RESULTS:
                 # --- ask what file to load
                 path = ui.popupGetXlsxFile(load_path, title=('Load Input *%s.xlsx File' % suffix_search_results))
                 if not path:
@@ -1708,13 +1795,10 @@ class Main:
                               num_missing, 'y' if num_missing == 1 else 'ies',)
                 ui.set_txt(ui.main_window, '_DESCRIPTOR_MAIN_', descriptor)
 
-                # --- Note that we will need to update the storage directory name based on this newly loaded input file
-                check_storage_dir = True
-
                 # --- advance the phase
-                ui.set_phase(ui.PHASE_FILT)
+                self.updatePhase(ui, Phase.PHASE_FILT, reset_progression=True)
 
-            elif event == '_FIND_MAIN_':
+            elif event == ui.BUTTON_FIND:
                 if df_queries is None or len(df_queries) <= 0:
                     continue
 
@@ -1731,10 +1815,10 @@ class Main:
                                                                     args=args)
 
                 # --- set phase
-                ui.set_phase(ui.PHASE_LOCK)
+                self.updatePhase(ui, Phase.PHASE_LOCK)
 
                 # -----------------------------------------------------------------
-                # THREADING C-FINDS
+                # THREADED C-FINDS
                 # -----------------------------------------------------------------
                 thread_stop = False
                 thread_id = threading.Thread(target=self.threaded_perform_finds,
@@ -1753,7 +1837,7 @@ class Main:
                 # we only update the tree if the user clicks on a SERIES node and it is not already in the DOWNLOADED
                 # status
                 if (selected_row_key.startswith('SERIES:')) and (unique_nodes[selected_row_key].status !=
-                                                                Status.DOWNLOADED):
+                                                                 Status.DOWNLOADED):
                     series_node = unique_nodes[selected_row_key]
                     study_node = unique_nodes[series_node.parent_study_key]
                     # update the backend representations of the series/study amalgamations
@@ -1775,34 +1859,38 @@ class Main:
                                            study_node.num_selected_series > 0)
 
                     # require at least 1 selected series before allowing the user to attempt a download
-                    ui.set_phase(ui.PHASE_MOVE if num_total_selected_series > 0 else ui.PHASE_FILT)
+                    self.updatePhase(ui, Phase.PHASE_MOVE if num_total_selected_series > 0 else Phase.PHASE_FILT)
 
 
             # --- User-selected header tag filters for which studies/series we ultimately download
-            elif event == '_FILT_MAIN_':
+            elif event == ui.BUTTON_FILTER:
 
                 if df_results is None or len(df_results) <= 0:
                     continue
 
-                txt0 = 'Successful query results are displayed in the table.\n\n\n' + \
-                      'To select which studies/series to download:'
+                txt0 = 'Please use the checkboxes to select at least one series to download.'
 
                 txt1 = 'A)  INDIVIDUAL STUDY RESULTS ARE NOT DISPLAYED. EACH EXPANDABLE ENTRY REPRESENTS A ' \
                        'CLUSTER OF STUDIES that all share a unique combination of both StudyDescription and ' \
                        'SeriesDescriptions. The "# of Studies" column indicates how many studies are in that ' \
-                       'cluster. This is to allow the user to efficiently sift through a large numbers of query ' \
-                       'results to target the studies (and in particular the series) of interest.'
+                       'cluster. This format is to allow the user to efficiently sift through a large numbers of ' \
+                       'query results to quickly select the studies (and in particular the series) of interest.'
 
                 txt2 = 'B)  BY DEFAULT, NO STUDIES/SERIES ARE SELECTED FOR DOWNLOAD. You must EXPAND ' \
-                       'EACH STUDY CLUSTER and MANUALLY SELECT the specific SERIES that you wish to download ' \
+                       'EACH STUDY CLUSTER and MANUALLY SELECT THE SPECIFIC SERIES that you wish to download ' \
                        'from each study cluster. This is to encourage the user to be mindful of their ' \
                        'bandwidth/storage usage and only download the specific series in the specific studies that ' \
                        'they need. At least one series must be selected to initiate a download'
 
                 title = '3. Select Series of Interest for Each Study'
-                ui.popupTextBox(txt0 + '\n\n' + txt1 + '\n\n' + txt2, title=title)
 
-            elif event == '_MOVE_MAIN_':
+                if num_total_selected_series > 0:
+                    self.updatePhase(ui, Phase.PHASE_MOVE)
+                else:
+                    ui.popupTextBox(txt0 + '\n\n' + txt1 + '\n\n' + txt2,
+                                                                       title=title)
+
+            elif event == ui.BUTTON_MOVE:
                 if df_results is None or len(df_results) <= 0:
                     continue
 
@@ -1823,12 +1911,10 @@ class Main:
                                     df_move[
                                         (df_move['StudyDescription'] == study_node.study_description) &
                                         (df_move['SeriesDescription'] == series_node.series_description)
-                                    ]
+                                        ]
                                 )
 
                 df_move = pd.concat(selected_dfs, ignore_index=True)
-
-
 
                 # 1. --- Connection info
                 self_info = peers[self.SELF]
@@ -1879,44 +1965,42 @@ class Main:
                                                                     master_tagname_to_tag=master_tagname_to_tag,
                                                                     args=None)
 
-
                 # 6. --- CONFIRM DOWNLOAD STORAGE DIRECTORY, append numbers to the end of the name if necessary
+                # if check_storage_dir:
+                #     check_storage_dir = False
+                #
+                #     prefix = prefix_anon if anonymize else prefix_raw
+                #     self_move_dir = os.path.join(storage_path,
+                #                                  prefix + os.path.splitext(os.path.basename(load_path))[0])
+                #     if os.path.isdir(self_move_dir):
+                #         dir_dirname = os.path.dirname(self_move_dir)
+                #         dir_basename = os.path.basename(self_move_dir)
+                #         self_move_dir = os.path.join(dir_dirname, dir_basename)
+                #         new_dir = self_move_dir
+                #         i = 1
+                #         # append numbers if necessary
+                #         while os.path.isdir(new_dir):
+                #             new_dir = '%s(%d)' % (self_move_dir, i)
+                #             i += 1
+                #         self_move_dir = new_dir
 
+                # Commented out because initial search results are already saved when the C-FINDS finish
+                # (key: _T_FINDS_DONE_)
+                # --- Save the initial search results from the C-FIND to an excel file
                 # Each downloaded study will have its own folder, and each of those study folders will go into
-                # this main 'self_move_dir' directory which is named after its associated loaded excel file
-                if check_storage_dir:
-                    check_storage_dir = False
-
-                    prefix = prefix_anon if anonymize else prefix_raw
-                    self_move_dir = os.path.join(storage_path,
-                                                 prefix + os.path.splitext(os.path.basename(load_path))[0])
-                    if os.path.isdir(self_move_dir):
-                        dir_dirname = os.path.dirname(self_move_dir)
-                        dir_basename = os.path.basename(self_move_dir)
-                        self_move_dir = os.path.join(dir_dirname, dir_basename)
-                        new_dir = self_move_dir
-                        i = 1
-                        # append numbers if necessary
-                        while os.path.isdir(new_dir):
-                            new_dir = '%s(%d)' % (self_move_dir, i)
-                            i += 1
-                        self_move_dir = new_dir
-
-                    # --- Save the initial search results from the C-FIND to an excel file
-                    move_queries_path = os.path.join(
-                        self_move_dir,
-                        )
-                    self.save_to_xlsx(ui,
-                                      self_move_dir,
-                                      os.path.basename(self_move_dir) + suffix_search_results + '.xlsx',
-                                      df_results,
-                                      file_descriptor='MOVE QUERIES',
-                                      create_dirs=True)
+                # # this main 'self_move_dir' directory which is named after its associated loaded excel file
+                # self.save_to_xlsx(ui,
+                #                   self_move_dir,
+                #                   os.path.basename(self_move_dir) + suffix_search_results + '.xlsx',
+                #                   df_results,
+                #                   file_descriptor='MOVE QUERIES',
+                #                   create_dirs=True)
 
                 # --- set phase
-                ui.set_phase(ui.PHASE_LOCK)
+                self.updatePhase(ui, Phase.PHASE_LOCK)
+
                 # -----------------------------------------------------------------
-                # THREADING C-MOVES
+                # THREADED C-MOVES
                 # -----------------------------------------------------------------
                 thread_stop = False
                 thread_id = threading.Thread(target=self.threaded_perform_moves,
@@ -1936,38 +2020,38 @@ class Main:
                 thread_id.start()
 
             # deprecated. SORT BUTTON not used anymore.
-            elif event == '_SORT_MAIN_':
-
-                # --- make the options look pretty
-                # fancy schmancy multipurpose selector popup! I'm very proud
-                temp_sort_yes, temp_sort_no = ui.popupSelector(
-                    ui=ui,
-                    lst_available=sort_no,
-                    lst_selected=sort_yes,
-                    title='Sort Studies by...',
-                    txt_available='Available Columns',
-                    txt_selected='Sort by (Order matters)')
-
-                # If user cancelled the sorting popup
-                if temp_sort_yes is None or temp_sort_no is None:
-                    continue
-
-                # Update sorting criteria!
-                sort_yes = temp_sort_yes
-                sort_no = temp_sort_no
-
-                # --- Sort!
-                # only if there's something to sort
-                if df_results is None or len(df_results) <= 0:
-                    continue
-
-                if sort_yes:
-                    df_results = df_results.sort_values(by=sort_yes)
-                # Update UI
-                tbl_studies = self.apply_dual_selections(df_results, dual_selections, ALL_PREFIX,
-                                                         reestablish_numbering=True,
-                                                         ordering=results_table_headings).values.tolist()
-                self.updateTable(ui, ui.main_window, '_TABLE_RESULTS_MAIN_', tbl_studies)
+            # elif event == '_SORT_MAIN_':
+            #
+            #     # --- make the options look pretty
+            #     # fancy schmancy multipurpose selector popup! I'm very proud
+            #     temp_sort_yes, temp_sort_no = ui.popupSelector(
+            #         ui=ui,
+            #         lst_available=sort_no,
+            #         lst_selected=sort_yes,
+            #         title='Sort Studies by...',
+            #         txt_available='Available Columns',
+            #         txt_selected='Sort by (Order matters)')
+            #
+            #     # If user cancelled the sorting popup
+            #     if temp_sort_yes is None or temp_sort_no is None:
+            #         continue
+            #
+            #     # Update sorting criteria!
+            #     sort_yes = temp_sort_yes
+            #     sort_no = temp_sort_no
+            #
+            #     # --- Sort!
+            #     # only if there's something to sort
+            #     if df_results is None or len(df_results) <= 0:
+            #         continue
+            #
+            #     if sort_yes:
+            #         df_results = df_results.sort_values(by=sort_yes)
+            #     # Update UI
+            #     tbl_studies = self.apply_dual_selections(df_results, dual_selections, ALL_PREFIX,
+            #                                              reestablish_numbering=True,
+            #                                              ordering=results_table_headings).values.tolist()
+            #     self.updateTable(ui, ui.main_window, '_TABLE_RESULTS_MAIN_', tbl_studies)
 
 
             # ---------------
