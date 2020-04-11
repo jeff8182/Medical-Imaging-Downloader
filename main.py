@@ -1,13 +1,14 @@
 import myGUI
 import pacs
 import datastruct
-from datastruct import Status
+from datastruct import NodeStatus
+from datastruct import RowStatus
 from datastruct import Phase
+from datastruct import Tag
 
 import traceback
 import os
 import json
-import textwrap
 
 import numpy as np
 
@@ -38,8 +39,8 @@ class Main:
     SELF = '<SELF>'
 
     phases = [p for p in Phase]
-    cur_phase = Phase.PHASE_LOAD_CHOICE
-    furthest_phase = Phase.PHASE_LOAD_CHOICE
+    cur_phase = Phase.PHASE_CHOICE
+    furthest_phase = Phase.PHASE_CHOICE
     new_project = True
 
     # --- Formatting functions
@@ -47,6 +48,8 @@ class Main:
     # dataframe values to tag values, and (3) convert tag values to dataframe values
     parse_to_tag_func = {}
     parse_to_val = {}
+    excel_to_tag = {}
+    master_tagname_to_tag = {}
 
     # ==================================================================
     # HARDCODED DEFAULT CONFIGURATIONS
@@ -75,12 +78,12 @@ class Main:
         "default_column_selection": "StudyDescription",
         "default_prefix_anon": "ANON_",
         "default_prefix_raw": "RAW_",
-        "default_suffix_initial_queries": "_InitialSearchQueries",
-        "default_suffix_search_results": "_InitialSearchResults_SNAPSHOT",
-        "default_suffix_success": "_SuccessfulDownloads",
-        "default_suffix_failure": "_UnsatisfiedQueries",
-        "default_suffix_allstudies": "_AllResults_ByStudies",
-        "default_suffix_allseries": "_AllResults_Full",
+        "default_suffix_initial_queries": "_SNAPSHOT_InitialQueries",
+        "default_suffix_search_results": "_SNAPSHOT_InitialSearchResults",
+        "default_suffix_success": "SuccessfulDownloads",
+        "default_suffix_failure": "UnsatisfiedQueries",
+        "default_suffix_allstudies": "AllResults_ByStudies",
+        "default_suffix_allseries": "_SNAPSHOT_AllResults",
         "default_legend_tags": ["PatientID",
                                 "StudyDate",
                                 "StudyTime",
@@ -132,7 +135,7 @@ class Main:
     ]
 
     DEFAULT_TAG_TO_EXCEL = {
-        'Query': ['ID', 'Query', 'Query ID', 'QueryID', 'Index'],
+        Tag.QueryNumber: ['ID', 'Query', 'Query ID', 'QueryID', 'Index', 'Query Number'],
         'PatientID': ["MRN"],
         'StudyDate': ["Date", "Study Date", "Date of Study"],
         'StudyTime': ["Time", "Study Time", "Time of Study"],
@@ -334,7 +337,7 @@ class Main:
     def __init__(self):
 
         # --- starting phase
-        self.cur_phase = Phase.PHASE_LOAD_CHOICE
+        self.cur_phase = Phase.PHASE_CHOICE
 
         # --- (dataframe value) to (tag), when we prep values to send a query
         self.parse_to_tag_func = {
@@ -351,8 +354,8 @@ class Main:
         # --- (tag) to (dataframe value), to take query results and convert them back for display/storage purposes
         self.parse_to_val_func = {
             'PatientID': self.parse_mrn,
-            'Query': self.parse_pad_num,
-            'Study': self.parse_pad_num
+            Tag.QueryNumber: self.parse_pad_num,
+            Tag.StudyNumber: self.parse_pad_num
         }
         self.parse_to_val_by_VR_func = {
             'DA': self.parse_to_val_date,
@@ -365,6 +368,8 @@ class Main:
 
     # --- Query numbering formatting
     def parse_pad_num(self, q_num, args=None):
+        if not q_num or q_num == '' or q_num == '*' or pd.isna(q_num):
+            return ''
         return '%04d' % int(q_num)
 
     # --- MRN conversions (ensure inclusion of leading zeros)
@@ -571,7 +576,7 @@ class Main:
 
     # ONLY uses tags from pac.QUERY to craft the query, does not use any extraneous columns from the passed in dataframe. So
     # if you want to ask about a specific tag, it needs to be specified in your pac.QUERY template
-    def craft_queries(self, ui, df, query_tags, master_tagname_to_tag, query_identifier_col='Query', args=None):
+    def craft_queries(self, ui, df, query_tags, query_identifier_col=Tag.QueryNumber, args=None):
         queries = []
         formatting_failures = {}
 
@@ -589,9 +594,9 @@ class Main:
             # format the tag values using 'parse_func' if available, otherwise just cast to string
             q = {}
             for tag in query_tags:
-                # --- Insert tags into the query. Only insert tags exist in our predefined 'query_tags'
+                # --- Insert tags into the query. Only insert tags that exist in our predefined 'query_tags'
                 val = str(row[tag]) if ((tag in row) and (not pd.isnull(row[tag]))) else ''
-                vr = master_tagname_to_tag[tag][2] if tag in master_tagname_to_tag else None
+                vr = self.master_tagname_to_tag[tag][2] if tag in self.master_tagname_to_tag else None
                 # --- convert dataframe value to DICOM-compliant value as necessary
                 # if the formatting fails, we don't want the program to stop so just try to continue with the raw values
                 try:
@@ -620,10 +625,10 @@ class Main:
 
         # --- Prepare the return dict
         # Add keys for all query fields
-        # Add additional keys for 'Status' and 'Query'
+        # Add additional keys for 'Status' and 'QueryNumber'
         #
         if not all_results:
-            all_results = {'Status': [], 'Query': []}
+            all_results = {Tag.RowStatus: [], Tag.QueryNumber: []}
             for tag in query:
                 if tag not in all_results:
                     all_results[tag] = []
@@ -650,10 +655,10 @@ class Main:
             # note the which original query this match is associated with
             for i in range(1, num_results + 1):
                 # match_i = '%d/%d' %(i, num_results)
-                all_results['Query'].append(query_identifier)
+                all_results[Tag.QueryNumber].append(query_identifier)
 
             # Update the status column
-            all_results['Status'] += ['FOUND'] * num_results
+            all_results[Tag.RowStatus] += [RowStatus.FOUND] * num_results
 
         # --- Deal with queries that had 0 matches
         else:
@@ -663,9 +668,9 @@ class Main:
                 all_results[tag].append(query[tag])
 
             # note the number of matches for this query
-            all_results['Query'].append(query_identifier)
+            all_results[Tag.QueryNumber].append(query_identifier)
             # Update the status column
-            all_results['Status'].append('MISSING')
+            all_results[Tag.RowStatus].append(RowStatus.MISSING)
 
         return all_results
 
@@ -709,10 +714,10 @@ class Main:
 
         return df
 
-    def format_df_columns(self, df, master_tagname_to_tag, parse_func={}, parse_by_vr_func={}):
+    def format_df_columns(self, df, parse_func={}, parse_by_vr_func={}):
         for heading in df.columns:
             try:
-                vr = master_tagname_to_tag[heading][2] if heading in master_tagname_to_tag else None
+                vr = self.master_tagname_to_tag[heading][2] if heading in self.master_tagname_to_tag else None
                 if vr in parse_by_vr_func and heading not in parse_func:
                     df.loc[:, heading] = \
                         df[heading].map(lambda x: parse_by_vr_func[vr](x, None))
@@ -720,16 +725,48 @@ class Main:
                     df.loc[:, heading] = \
                         df[heading].map(lambda x: parse_func[heading](x, None))
             except ValueError as err:
-                print('Issue formatting column: %s\n%s' % (heading, err))
+                raise Exception('Issue formatting column: %s\n%s' % (heading, err))
+
 
         return df
 
-    def format_df(self, ui, df, master_tagname_to_tag, parse_func={}, parse_by_vr_func={}):
+    def format_df(self, ui, df, parse_func={}, parse_by_vr_func={}):
         # --------- General formatting
         df = self.format_df_general(df)
         # --- format individual columns
-        df = self.format_df_columns(df, master_tagname_to_tag, parse_func, parse_by_vr_func)
+        df = self.format_df_columns(df, parse_func, parse_by_vr_func)
         return df
+
+    def combine_with_numbering(self, ui, df_old, df_new, col_numbering):
+        # --- isolate new rows that are not already in our existing row list
+        df_old_nonumbering = df_old.drop([col_numbering], axis='columns')
+        df_new_nonumbering = df_new.drop([col_numbering], axis='columns')
+        df_onlynew = df_new_nonumbering[~df_new_nonumbering.apply(tuple, 1).isin(df_old_nonumbering.apply(tuple, 1))]
+
+        # --- New rows will be assigned sequential numbers starting from after the largest existing query number. Any
+        # current gaps in existing query numbering will intentionally NOT be filled.
+        first_new_number = df_old[col_numbering].astype(int).max() + 1
+        df_onlynew.insert(0,
+                          col_numbering,
+                          range(first_new_number, first_new_number + len(df_onlynew)))
+
+
+        # --- standard dataframe formatting
+        try:
+            df_onlynew = self.format_df(ui,
+                                        df_onlynew,
+                                        self.parse_to_val_func,
+                                        self.parse_to_val_by_VR_func)
+        except Exception as err:
+            traceback.print_stack()
+            ui.popupError('***ERROR***\nFailed to assign query numbering to new queries:\n%s - %s' %
+                          (type(err).__name__, err))
+            return None
+
+        # --- combine old + new
+        df_combined = df_old.append(df_onlynew, sort=False).sort_values([col_numbering])
+
+        return df_combined
 
     def apply_selections(self, df, selections, ignore={}):
         if selections is None or df is None:
@@ -749,29 +786,33 @@ class Main:
 
         return df
 
-    # DOESN'T ACTUALLY ESTABLISH THE NUMBERING, FOR WHATEVER REASON LOL
-    def establish_numbering(self, df, ordering, numbering_col='Study', unique_col='StudyInstanceUID'):
+    def establish_numbering(self, df, ordering, numbering_col=Tag.StudyNumber, unique_col='StudyInstanceUID'):
+
         old_index = 'old_index'
-        df[old_index] = df.index
+        df.loc[:, old_index] = df.index
         if numbering_col in df.columns:
             df = df.drop([numbering_col], 1)
+
         # --- select only 1 of each unique_col, but with the exception of also keep all rows that have unique_col==''
         df_index_by_study = df.loc[
             (~df[unique_col].duplicated()) |
             (df[unique_col] == ''),
             [old_index, unique_col]
         ]
-        # --- set the indexing based on this
+
+        # --- set the numbering based on the index
         df_index_by_study = df_index_by_study.reset_index(drop=True)
         df_index_by_study.index += 1
         df_index_by_study[numbering_col] = df_index_by_study.index
+
         # --- convert the ints into 4-digit integer strings
         df_index_by_study.loc[:, numbering_col] = \
             df_index_by_study.loc[:, numbering_col].apply(lambda x: self.parse_pad_num(x))
-        # --- Apply our established indexes to the main results dataframe
+
+        # --- Apply our established numbering to the main results dataframe
         df = df.merge(df_index_by_study, on=[old_index, unique_col], how='outer')
         df = df.drop(columns=[old_index])
-        # --- propagate the indexes forward for any studies that span multiple rows (e.g. have more than 1
+        # --- propagate the numbering forward for any studies that span multiple rows (e.g. have more than 1
         # unique series identifier listed for a given study)
         df = df.fillna(method='ffill')
         df = df[ordering]
@@ -779,7 +820,7 @@ class Main:
         return df
 
     def apply_dual_selections(self, df, dual_selections, all_prefix, ignore_independent_vals=[],
-                              reestablish_numbering=False, ordering=None, numbering_col='Study', \
+                              reestablish_numbering=False, ordering=None, numbering_col=Tag.StudyNumber, \
                               unique_col='StudyInstanceUID'):
 
         # --- Global filters
@@ -843,8 +884,13 @@ class Main:
 
         return selections
 
-    def load_excel(self, ui, path, required_headings=[], excel_to_tag={}):
-        sheets = pd.read_excel(path, sheet_name=None)
+    def load_excel(self, ui, path, required_headings=[], sheet_name=None):
+        try:
+            sheets = pd.read_excel(path, sheet_name=sheet_name)
+        except Exception as err:
+            traceback.print_stack()
+            ui.popupError('ERROR: Failed to read in "%s"\n%s' % (path, err))
+            return None
 
         # --- Append each study of interest into a list of dicts, then display all valid entries
         # the DataFrame structure is the pandas library representation of a sheet in excel
@@ -854,7 +900,7 @@ class Main:
             try:
                 df = sheets[sheet_name]
                 # --- Try to standardize the excel column headers
-                df = df.rename(columns=excel_to_tag)
+                df = df.rename(columns=self.excel_to_tag)
 
                 # --- Fill in missing tags and null values with np.nan as necessary
                 # we honestly don't care what the user puts in their excel sheet. We have a predefined set of
@@ -898,6 +944,83 @@ class Main:
 
         return df_queries_temp
 
+    def load_queries(self, ui, load_path, query_table_headings, generate_missing_querynumbering=True):
+        # --- Load excel file
+        df_queries_temp = self.load_excel(ui, load_path, query_table_headings)
+        if df_queries_temp is None:
+            return None
+
+        # --------- set 'QueryNumber' column numbering, so that we know which queries yielded which results.
+        # User can include a 'QueryNumber' / 'Query' column in their input excel sheet to provide query numbering
+        # themselves if they desire, or if they have some special query numbering system they wanted to go by.
+
+        # --- if user-defined Tag.QueryNumber numbering column is already here, then just do a quick check that they
+        # are all integers and are all valid. If they are valid, sort the dataframe based on the query numbering
+        try:
+            # --- check for existence of column and that they are all integers. Will throw an exception if either of
+            # those criteria are not met
+            df_queries_temp[Tag.QueryNumber].astype(int)
+
+            # --- duplicate queryNumber numbers are not allowed
+            if df_queries_temp[Tag.QueryNumber].duplicated().any():
+                ui.popupError(
+                    '***ERROR***\nDuplicate QueryNumber found. Each row in the input file represents one query, '
+                    'and if a "QueryNumber" column is specified by the input file, each value in that column '
+                    'must be a unique integer.\n\nFile:  %s\nDuplicate QueryNumbers:  %s' %
+                    (load_path,
+                     str(set(df_queries_temp[df_queries_temp[Tag.QueryNumber].duplicated(keep=False)][
+                         Tag.QueryNumber].values.tolist()))))
+                return None
+
+            # --- sort based on the user-defined query numbering.
+            try:
+                df_queries_temp = df_queries_temp.sort_values(by=[Tag.QueryNumber])
+            except TypeError as err:
+                ui.popupError(
+                    '***ERROR***\nIncorrect formatting of user-defined "QueryNumber" column value: must be '
+                    'integer.\n%s\n%s\n%s' %
+                    (load_path, type(err).__name__, err))
+
+        except ValueError as err:
+
+            # If 'QueryNumber' column is invalid (e.g. either no user-defined query numbering column is found
+            # or the user-defined query numbering column is empty / contains non-integer values), then just assign
+            # a default query numbering in the order the queries were read in.
+
+            # if there is no querynumber column at all then generate a placeholder column, as the rest of the
+            # program generally assumes it is present
+            if Tag.QueryNumber not in df_queries_temp.columns:
+                df_queries_temp[Tag.QueryNumber] = ''
+
+            # --- Default query numbering based on the order the rows were provided in
+            if generate_missing_querynumbering:
+                ui.popup(
+                    'Automatically generating query numbering.\n\nIf manual query numberings were '
+                    'provided via a "QueryNumber" column,\nplease ensure that every row has a unique '
+                    'integer value and that there are no blank rows.',
+                    title='Automatically Generating Query Numbers'
+                )
+
+                # autogenerate based on the order the rows were provided
+                df_queries_temp.index += 1
+                df_queries_temp.loc[:, Tag.QueryNumber] = df_queries_temp.index
+
+
+        # --------- standardize excel values to dataframe values as necessary
+        try:
+
+            df_queries_temp = self.format_df(ui, df_queries_temp,
+                                             self.parse_to_val_func,
+                                             self.parse_to_val_by_VR_func)
+        except Exception as err:
+            traceback.print_stack()
+            ui.popupError('***ERROR***\nInvalid format in file \'%s\'\n%s: %s' %
+                          (os.path.basename(load_path), type(err).__name__, err))
+            return None
+
+        # return result
+        return df_queries_temp
+
     def create_template_xlsx(self, columns, path):
         if not columns:
             return
@@ -930,20 +1053,20 @@ class Main:
     # WILL IGNORE ANY (Status == 'Missing') entries, because those are failed queries
     def parse_query_results_to_study_nodes(self, df):
 
-        # do not display any unfound queries (represented by rows where (df['Status'] == 'MISSING')
-        df = df[df['Status'] != 'MISSING']
+        # do not display any unfound queries (represented by rows where (df[Tag.RowStatus] == 'MISSING')
+        df = df[df[Tag.RowStatus] != RowStatus.MISSING]
 
         if df.empty:
             return [{}, {}]
 
         # aggregate all seriesdescriptions associated with each study
-        df = df.sort_values(['StudyDescription', 'SeriesDescription', 'Study']).groupby(
-            ['StudyDescription', 'Study'])[
+        df = df.sort_values(['StudyDescription', 'SeriesDescription', Tag.StudyNumber]).groupby(
+            ['StudyDescription', Tag.StudyNumber])[
             'SeriesDescription'].agg(';'.join).reset_index()
 
         # sort and convert to a dict for parsing
-        datadict = df[['StudyDescription', 'SeriesDescription']]. \
-            sort_values(['StudyDescription', 'SeriesDescription']). \
+        datadict = df[['StudyDescription', 'SeriesDescription', Tag.StudyNumber]]. \
+            sort_values(['StudyDescription', 'SeriesDescription', Tag.StudyNumber]). \
             to_dict(orient='index')
 
         # track unique study-series keys, since we may encounter multiple duplicate series/study descriptions.
@@ -952,14 +1075,18 @@ class Main:
         study_nodes = {}
         for index in datadict.keys():
             row = datadict[index]
-
             studyseries_unique_key = 'STUDY:' + row['StudyDescription'] + '___ALLSERIES' + row['SeriesDescription']
+
+            # --- if we have already encountered this unique study+allseries combo
             if studyseries_unique_key in study_nodes:
                 study_nodes[studyseries_unique_key].num_similar_studyseries += 1
+                study_nodes[studyseries_unique_key].study_numbers.append(row[Tag.StudyNumber])
+            # --- if this is a new unique study+allseries combo
             else:
                 # --- STUDY NODE
                 # create study node
                 study_node = datastruct.StudyDescriptionNode(row['StudyDescription'], studyseries_unique_key)
+                study_node.study_numbers.append(row[Tag.StudyNumber])
 
                 # --- SERIES NODES associated with this study node
                 for seriesd in list(filter(None, row['SeriesDescription'].split(';'))):
@@ -1007,7 +1134,8 @@ class Main:
 
                 # --- update progressbar via queue
                 key = '_T_PROGRESS_'
-                msg = 'WARNING: DO NOT CLICK THE X. TO CANCEL, CLICK "CANCEL" AND THE TRANSFER WILL STOP AFTER THE ' \
+                msg = 'WARNING: DO NOT CLICK THE "X".\nTO CANCEL, CLICK "CANCEL" AND THE TRANSFER WILL STOP AFTER ' \
+                      'THE ' \
                       'CURRENT STUDY/SERIES IS COMPLETED.\n' \
                       'SOURCE:        %s\n' \
                       'DESTINATION:   %s\n' \
@@ -1048,7 +1176,7 @@ class Main:
                             status = ('STUDY ON FILE: %d total image%s' % (num_dcm, plural))
                             df_results.loc[(df_results['StudyInstanceUID'] == cur_studyUID) &
                                            (df_results['SeriesInstanceUID'] == cur_seriesUID),
-                                           'Status'] = status
+                                           Tag.RowStatus] = status
                             continue
 
                 # 7a. --- perform the C-MOVE
@@ -1113,11 +1241,11 @@ class Main:
                 # prefix = 'DOWNLOADED:' if message is None else message + ': '
                 # counts = '%d/%d stored, %d/%d ignored' % (series_stored, study_stored, series_passed, study_passed)
                 # status = prefix + counts
-                status = message if message else 'DOWNLOADED'
+                status = message if message else RowStatus.DOWNLOADED
                 df_results.loc[
                     (df_results['StudyInstanceUID'] == cur_studyuid) &
                     (df_results['SeriesInstanceUID'] == cur_seriesuid),
-                    'Status'] = status
+                    Tag.RowStatus] = status
 
         # --- CLOSE the progress bar via queue (if it was not stopped manually)
         if not thread_stop():
@@ -1245,13 +1373,13 @@ class Main:
 
         # --------- Load Master Dict of Known Tags
         tags_key = 'config_tags'
-        master_tagname_to_tag = self.load_json(config[tags_key],
-                                               default=self.DEFAULT_MASTER_TAGNAME_TO_TAGS,
-                                               sort_keys=True)
+        self.master_tagname_to_tag = self.load_json(config[tags_key],
+                                                    default=self.DEFAULT_MASTER_TAGNAME_TO_TAGS,
+                                                    sort_keys=True)
         # convert 'tag group' and 'tag element' hex strings into their corresponding integer values
-        master_tagname_to_tag = {k: [int(grp, 0), int(elm, 0), vr]
-                                 for k, [grp, elm, vr]
-                                 in master_tagname_to_tag.items()}
+        self.master_tagname_to_tag = {k: [int(grp, 0), int(elm, 0), vr]
+                                      for k, [grp, elm, vr]
+                                      in self.master_tagname_to_tag.items()}
 
         # --------- Load Study Identifier Tags
         # only use tagnames that do exist in the master list
@@ -1261,7 +1389,7 @@ class Main:
                                            default=self.DEFAULT_QUERY_IDENTIFIERS,
                                            key=identifier_wrapper_key)
         # tagnames are valid only if they do exist in the master list
-        query_identifiers = [x for x in query_identifiers if x in master_tagname_to_tag]
+        query_identifiers = [x for x in query_identifiers if x in self.master_tagname_to_tag]
 
         # --------- Load Query Template
         query_key = 'config_query_tags'
@@ -1272,7 +1400,7 @@ class Main:
         # include identifier tags in the query as well
         query_tags_sorted = query_tags_sorted + [x for x in query_identifiers if x not in query_tags_sorted]
         # tagnames are valid only if they do exist in the master list
-        query_tags_sorted = [x for x in query_tags_sorted if x in master_tagname_to_tag]
+        query_tags_sorted = [x for x in query_tags_sorted if x in self.master_tagname_to_tag]
 
         # --------- Load Anonymization Parameters
         # blacklist of tag values that, if present, means we drop the entire image. Case IN-sensitive
@@ -1289,13 +1417,13 @@ class Main:
         tag_to_excel_key = 'config_tag_to_excel_map'
         tag_to_excel = self.load_json(config[tag_to_excel_key], default=self.DEFAULT_TAG_TO_EXCEL, sort_keys=True)
         # Build our actual goal datastructure, the Excel-to-Tag map
-        excel_to_tag = {}
+        self.excel_to_tag = {}
         for k, v in tag_to_excel.items():
             for heading in v:
-                excel_to_tag[heading] = k
-                excel_to_tag[heading.lower()] = k
-                excel_to_tag[heading.upper()] = k
-                excel_to_tag[heading.capitalize()] = k
+                self.excel_to_tag[heading] = k
+                self.excel_to_tag[heading.lower()] = k
+                self.excel_to_tag[heading.upper()] = k
+                self.excel_to_tag[heading.capitalize()] = k
 
         # --------- Load Miscellaneous User Parameters
         user_defaults_key = 'config_user_defaults'
@@ -1311,7 +1439,7 @@ class Main:
         suffix_allseries = user_defaults['default_suffix_allseries']
 
         legend_tags = user_defaults['default_legend_tags']
-        legend_tags = [x for x in legend_tags if x in master_tagname_to_tag]
+        legend_tags = [x for x in legend_tags if x in self.master_tagname_to_tag]
         src_highlight = user_defaults['default_src']
         dest_highlight = user_defaults['default_dest']
         xlsx_dir = user_defaults['default_xlsx_dir']
@@ -1345,12 +1473,12 @@ class Main:
         # *******************************
 
         # --- Table headings for the table displaying User Queries
-        query_table_headings = ['Query'] + query_identifiers
+        query_table_headings = [Tag.QueryNumber] + query_identifiers
         query_table_padding = [' ' * 6] * len(query_table_headings)
 
         # --- Table headings for the table displaying Query Results
-        # 'Status' in particular requires a lot of space for text
-        results_table_headings = ['Study', 'Status', 'Query'] + query_tags_sorted
+        # Tag.RowStatus in particular requires a lot of space for text
+        results_table_headings = [Tag.StudyNumber, Tag.RowStatus, Tag.QueryNumber] + query_tags_sorted
         results_table_padding = [''] + \
                                 [' ' * 23] + \
                                 ([' ' * 6] * (len(results_table_headings) - 2))
@@ -1361,7 +1489,7 @@ class Main:
         num_total_selected_series = 0
 
         # --- Current PHASE
-        self.cur_phase = Phase.PHASE_LOAD_CHOICE
+        self.cur_phase = Phase.PHASE_CHOICE
 
         # --- Variables to track the current storage directory. Updated every time a download is triggered for the
         # first time after loading a new input xlsx file
@@ -1406,7 +1534,7 @@ class Main:
         # *******************************
         # PAC (netcode, DICOM stuff)
         # *******************************
-        pac = pacs.PAC(master_tagname_to_tag, query_tags_sorted, anon_imgs, anon_vrs, anon_tags, main=self)
+        pac = pacs.PAC(self.master_tagname_to_tag, query_tags_sorted, anon_imgs, anon_vrs, anon_tags, main=self)
 
         # *******************************
         # MAIN UI EVENT LOOP
@@ -1460,7 +1588,7 @@ class Main:
 
                     # --- formatting (generalized column formatting + individual column formatting)
                     try:
-                        df_results_temp = self.format_df(ui, df_results_temp, master_tagname_to_tag,
+                        df_results_temp = self.format_df(ui, df_results_temp,
                                                          self.parse_to_val_func,
                                                          self.parse_to_val_by_VR_func)
                     except Exception as err:
@@ -1470,40 +1598,80 @@ class Main:
                         self.updatePhase(ui, Phase.PHASE_FIND)
                         continue
 
-                    # --- Lock in df_results
-                    df_results = df_results_temp
+                    # ------- Establish STUDY NUMBERING (which will double as ANONYMIZATION INDEXES)
+                    df_results_temp = df_results_temp.sort_values(by=query_table_headings)
+                    df_results_temp = self.establish_numbering(df_results_temp,
+                                                               ordering=results_table_headings,
+                                                               numbering_col=Tag.StudyNumber,
+                                                               unique_col='StudyInstanceUID')
 
 
-                    # --- Save the search queries to an excel file
-                    # - INITIAL QUERIES (a lightly processed version of most basic user-passed-in queries used for
-                    # the initial search), with associated automatically assigned query numbering that is propagated
-                    # forward in the search/transfer result excel files
-                    basename_out = os.path.basename(self_move_dir)
-                    self.save_to_xlsx(ui,
-                                      self_move_dir,
-                                      basename_out + suffix_initial_queries + '.xlsx',
-                                      df_queries,
-                                      file_descriptor='INITIAL SEARCH QUERIES',
-                                      create_dirs=True)
 
-                    # - Save the search results to an excel file
-                    self.save_to_xlsx(ui,
-                                      self_move_dir,
-                                      basename_out + suffix_search_results + '.xlsx',
-                                      df_results,
-                                      file_descriptor='INITIAL SEARCH RESULTS',
-                                      create_dirs=True)
+                    # --------- if we are reloading an existing project, then combine the new search results with our
+                    # existing search results
+                    if self.new_project:
+                        # --- Lock in df_results
+                        df_results = df_results_temp
+                    else:
+                        # --- Load a snapshot of the previous results (the AllResults SNAPSHOT file)
+                        path_prevresults = os.path.join(self_move_dir, suffix_allseries + '.xlsx')
+                        df_prevresults = self.load_excel(ui, path_prevresults, results_table_headings)
+
+                        if df_prevresults is None:
+                            ui.popupError('***ERROR***\nResults snapshot file "%s" could not be loaded.'
+                                          'Cannot validate current search results with past search results.\n%s'
+                                          % path_prevresults)
+                        else:
+                            try:
+                                # --- standardize excel values to dataframe values as necessary
+                                df_prevresults = self.format_df(ui, df_prevresults,
+                                                                 self.parse_to_val_func,
+                                                                 self.parse_to_val_by_VR_func)
+
+                                # --- If we can successfully load the old results, merge them with the new results and assign
+                                # numbering to the new studies as appropriate
+                                # - isolate new rows that are not already in our existing row list
+                                # - ignore StudyNumber permanently (we will be assigning new values)
+                                df_prevresults_nonumbering = df_prevresults.drop([Tag.StudyNumber],
+                                                                                 axis='columns')
+                                df_results_temp_nonumbering = df_results_temp.drop([Tag.StudyNumber],
+                                                                                   axis='columns')
+
+                                # Statuses may also vary depending on the search/download status of the existing
+                                # project, so ignore them temporarily when comparing new and old results
+                                df_onlynewresults_nonumbering = df_results_temp_nonumbering[
+                                    ~df_results_temp_nonumbering.drop([Tag.RowStatus], axis='columns').apply(tuple, 1).
+                                    isin(
+                                    df_prevresults_nonumbering.drop([Tag.RowStatus], axis='columns').apply(tuple, 1))]
 
 
-                    # ------- ESTABLISH ANONYMIZATION INDEXES BY PER-STUDY BASIS
-                    # THIS IS THE ONLY TIME THAT WE RESET THE INDEX, so the index and resultant anonymization mapping
-                    # should stay consistent. The indexes are established after sorting, by the preestablished
-                    # "sorted query" column order
-                    df_results = df_results.sort_values(by=query_table_headings)
-                    df_results = self.establish_numbering(df_results,
-                                                          ordering=results_table_headings,
-                                                          numbering_col='Study',
-                                                          unique_col='StudyInstanceUID')
+                                # --- Assign new studynumbers to the new rows
+
+                                # - get the max existing studynumber so we know where to continue the numbering
+                                studynumber_offset = df_prevresults[Tag.StudyNumber].astype(int).max()
+                                # - establish numbering within this set of new studies
+                                df_onlynewresults = self.establish_numbering(df_onlynewresults_nonumbering,
+                                                                             ordering=results_table_headings,
+                                                                             numbering_col=Tag.StudyNumber,
+                                                                             unique_col='StudyInstanceUID')
+                                # - offset the studynumbering to account for the old studynumbers
+                                df_onlynewresults[Tag.StudyNumber] = df_onlynewresults[
+                                    Tag.StudyNumber].astype('int') + studynumber_offset
+                                # - format the studynumbers
+                                df_onlynewresults[Tag.StudyNumber] = \
+                                    df_onlynewresults[Tag.StudyNumber].apply(lambda x: self.parse_pad_num(x))
+
+                                # --- combine old + new
+                                df_results = df_prevresults.append(df_onlynewresults, sort=False) \
+                                    .sort_values([Tag.StudyNumber])
+
+                            except Exception as err:
+                                traceback.print_stack()
+                                ui.popupError('***ERROR***\nResults snapshot file "%s" was incorrectly formatted. '
+                                              'Cannot validate current search results with past search results.\n%s - %s' %
+                                              (path_prevresults, type(err).__name__, err))
+
+
                     # --- Assert the proper column order
                     df_results = df_results[results_table_headings]
 
@@ -1511,16 +1679,43 @@ class Main:
                     if sort_yes:
                         df_results = df_results.sort_values(by=sort_yes)
 
+
+                    # --------- DONE MANIPULATING THE DATAFRAME. Now update UI/files
+
+                    # --- Save the search queries to an excel file
+                    # - INITIAL QUERIES (a lightly processed version of most basic user-passed-in queries used for
+                    # the initial search), with associated automatically assigned query numbering that is propagated
+                    # forward in the search/transfer result excel files
+                    #basename_out = os.path.basename(self_move_dir)
+                    fname_out = suffix_initial_queries + '.xlsx'
+                    self.save_to_xlsx(ui,
+                                      self_move_dir,
+                                      fname_out,
+                                      df_queries,
+                                      file_descriptor='INITIAL SEARCH QUERIES',
+                                      create_dirs=True)
+
+                    # - Save the search results to an excel file
+                    fname_out = suffix_allseries + '.xlsx'
+                    self.save_to_xlsx(ui,
+                                      self_move_dir,
+                                      fname_out,
+                                      df_results,
+                                      file_descriptor='INITIAL SEARCH RESULTS',
+                                      create_dirs=True)
+
+
+                    # --- UI selector representation
                     [study_nodes, unique_nodes] = self.parse_query_results_to_study_nodes(df_results)
                     self.updateTree(ui, ui.main_window, '_TREE_RESULTS_MAIN_', study_nodes)
                     # we start with a blank slate, with no studies/series selected
                     num_total_selected_series = 0
 
                     # --- Update our results descriptor
-                    num_queries = df_results['Query'].nunique()
-                    num_matched = df_results[df_results['Status'] == 'FOUND']['Query'].nunique()
-                    num_missing = len(df_results[df_results['Status'] == 'MISSING'])
-                    num_matches = df_results['Study'].nunique() - num_missing
+                    num_queries = df_results[Tag.QueryNumber].nunique()
+                    num_matched = df_results[df_results[Tag.RowStatus] == RowStatus.FOUND][Tag.QueryNumber].nunique()
+                    num_missing = len(df_results[df_results[Tag.RowStatus] == RowStatus.MISSING])
+                    num_matches = df_results[Tag.StudyNumber].nunique() - num_missing
                     descriptor = '%d Quer%s: %d matching stud%s, %d matched quer%s, %d unmatched quer%s' % \
                                  (num_queries, 'y' if num_queries == 1 else 'ies',
                                   num_matches, 'y' if num_matches == 1 else 'ies',
@@ -1559,7 +1754,7 @@ class Main:
                     # -------------------------------- Create legend/key excel files to document the C-MOVE results
                     # Generally regardless of how we exited the C-MOVE loop (error, cancelled, finished), we want to
                     # create a legend based on whatever information we do have currently.
-                    headings_out = ['Study', 'Status', 'Query'] + legend_tags
+                    headings_out = [Tag.StudyNumber, Tag.RowStatus, Tag.QueryNumber] + legend_tags
                     basename_out = os.path.basename(self_move_dir)
 
                     # --- FIND/MOVE RESULTS
@@ -1572,27 +1767,28 @@ class Main:
 
                     # - ALL results (SERIES level, essentially displaying every piece of data we have, as granular as
                     # we can get)
-                    fname_out = basename_out + suffix_allseries + '.xlsx'
+                    fname_out = suffix_allseries + '.xlsx'
                     self.save_to_xlsx(ui, self_move_dir, fname_out, df_results,
                                       file_descriptor='ALL RESULTS (EVERY SERIES)')
 
-                    # - ALL results (STUDY level) (technically is further segregated by 'Status' in addition to 'Study')
-                    fname_out = basename_out + suffix_allstudies + '.xlsx'
+                    # - ALL results (STUDY level) (technically is further segregated by 'Status' in addition to
+                    # Tag.StudyNumber)
+                    fname_out = suffix_allstudies + '.xlsx'
                     self.save_to_xlsx(ui, self_move_dir, fname_out, df_output_by_study,
                                       file_descriptor='ALL RESULTS (EVERY STUDY)')
 
                     # - SUCCESSFUL downloads (STUDY level)
-                    df_success = df_output_by_study[df_output_by_study['Status'] == 'DOWNLOADED']
-                    fname_out = basename_out + suffix_success + '.xlsx'
+                    df_success = df_output_by_study[df_output_by_study[Tag.RowStatus] == RowStatus.DOWNLOADED]
+                    fname_out = suffix_success + '.xlsx'
                     self.save_to_xlsx(ui, self_move_dir, fname_out, df_success,
                                       file_descriptor='SUCCESSFUL DOWNLOADS')
 
                     # - UNSUCCESSFUL queries (queries which have zero successful downloads associated with them)
                     # (may be due to incorrect query or manual user selection/deselection)
                     # P[P.email.isin(S.email) == False]
-                    df_failure = df_output_by_study[df_output_by_study['Status'] != 'DOWNLOADED']
-                    df_failure = df_failure[~df_failure['Query'].isin(df_success['Query'])]
-                    fname_out = basename_out + suffix_failure + '.xlsx'
+                    df_failure = df_output_by_study[df_output_by_study[Tag.RowStatus] != RowStatus.DOWNLOADED]
+                    df_failure = df_failure[~df_failure[Tag.QueryNumber].isin(df_success[Tag.QueryNumber])]
+                    fname_out = suffix_failure + '.xlsx'
                     self.save_to_xlsx(ui, self_move_dir, fname_out, df_failure,
                                       file_descriptor='QUERIES WITHOUT ASSOCIATED SUCCESSFUL DOWNLOADS')
 
@@ -1606,8 +1802,8 @@ class Main:
                     num_moves = val['num_moves']
                     ui.popup('Transfer Finished\n%d/%d entries updated' % (num_moves, len(queries)))
 
-                    # 9. --- Advance phase
-                    # self.updatePhase(ui, Phase.PHASE_DONE)
+                    # 9. --- Return to PHASE_MOVE, to clear the PHASE_LOCK
+                    self.updatePhase(ui, Phase.PHASE_MOVE)
 
             # ---------------
             # MAIN TAB EVENTS
@@ -1619,25 +1815,30 @@ class Main:
 
             elif event == ui.BUTTON_BACK:
                 idx = self.phases.index(self.cur_phase)
-                self.updatePhase(ui, self.phases[idx-1])
+                self.updatePhase(ui, self.phases[idx-1], args=self.new_project)
 
             elif event == ui.BUTTON_NEXT:
                 idx = self.phases.index(self.cur_phase)
-                self.updatePhase(ui, self.phases[idx+1])
+                self.updatePhase(ui, self.phases[idx+1], args=self.new_project)
 
             elif event == ui.BUTTON_NEW:
                 self.new_project = True
                 self.updatePhase(ui,
-                                 Phase.PHASE_LOAD_PARAMETERS,
+                                 Phase.PHASE_PARAMETERS,
                                  reset_progression=True,
                                  args=self.new_project)
+                ui.set_txt(ui.main_window, '_TXT_LOADQUERIES_', '')
+                ui.set_txt(ui.main_window, '_TXT_STORAGEDIR_', '')
 
             elif event == ui.BUTTON_OLD:
                 self.new_project = False
                 self.updatePhase(ui,
-                                 Phase.PHASE_LOAD_PARAMETERS,
+                                 Phase.PHASE_PARAMETERS,
                                  reset_progression=True,
                                  args=self.new_project)
+
+                ui.set_txt(ui.main_window, '_TXT_LOADQUERIES_', '')
+                ui.set_txt(ui.main_window, '_TXT_STORAGEDIR_', '')
 
             elif event == ui.BUTTON_QUERYFILE:
                 path = ui.popupGetXlsxFile(load_path)
@@ -1666,7 +1867,7 @@ class Main:
                             i += 1
                         autogen_storagedir = new_dir
 
-                    ui.set_txt(ui.main_window, '_TXT_LOADDIR_', autogen_storagedir)
+                    ui.set_txt(ui.main_window, '_TXT_STORAGEDIR_', autogen_storagedir)
 
 
             elif event == ui.BUTTON_STORAGEDIR:
@@ -1680,68 +1881,74 @@ class Main:
                 if not path:
                     continue
 
-                ui.set_txt(ui.main_window, '_TXT_LOADDIR_', path)
+                ui.set_txt(ui.main_window, '_TXT_STORAGEDIR_', path)
 
             elif event == ui.BUTTON_LOAD_QUERIES:
-                path = values['_TXT_LOADQUERIES_']
-                storage_dir = values['_TXT_LOADDIR_']
-                if not path or not storage_dir:
+                temp_path = values['_TXT_LOADQUERIES_']
+                temp_storage_dir = values['_TXT_STORAGEDIR_']
+                if not temp_path or not temp_storage_dir:
                     ui.popupError('Please enter valid values for both "Query File" and "Project Storage Directory".')
                     continue
 
-                ######################################################################################################
-                # TODO DEAL WITH OLD PROJECT VALIDATION OH GOD
-                ######################################################################################################
+                load_path = temp_path
+                self_move_dir = temp_storage_dir
 
-                self_move_dir = storage_dir
-
-                # --- Load excel file
-                load_path = path
-                df_queries_temp = self.load_excel(ui, load_path, query_table_headings, excel_to_tag)
+                # When reloading an old project, DO NOT autogenerate missing query numbering for the new queries.
+                # If the user provides their own query numberings, those will still be accepted and used as long as
+                # they do not conflict with any existing query numberings in the old project.
+                df_queries_temp = self.load_queries(ui, load_path, query_table_headings,
+                                                    generate_missing_querynumbering=self.new_project)
                 if df_queries_temp is None:
-                    continue
-
-                # --------- set 'Query' column numbering, so that we know which queries yielded which results.
-                # User can set 'Query' column numbering themselves if they set an 'ID' or 'Query' or 'QueryID' column
-                # in their input excel sheet
-                # --- if user-defined 'Query' numbering column is already here, then just do a quick check that they
-                # are all integers and sort the dataframe based on the query numbering
-                if 'Query' in df_queries_temp.columns:
-                    # --- sort based on the user-defined query numbering.
-                    try:
-                        df_queries_temp = df_queries_temp.sort_values(by=['Query'])
-                    except TypeError as err:
-                        ui.popupError(
-                            '***ERROR***\nIncorrect formatting of user-defined \'Query\' column value: must be '
-                            'integer.\n%s\n%s\n%s' %
-                            (load_path, type(err).__name__, err))
-                # --- If 'Query' column is invalid (e.g. either no user-defined query numbering column is found,
-                # or the user-defined query numbering column is empty), then just assign query numbering in the
-                # order the queries were read in.
-                try:
-                    df_queries_temp['Query'].astype(int)
-
-                except ValueError as err:
-                    df_queries_temp.index += 1
-                    df_queries_temp['Query'] = df_queries_temp.index
-
-                # --- standardize excel values to dataframe values as necessary
-                try:
-                    df_queries_temp = self.format_df(ui, df_queries_temp, master_tagname_to_tag,
-                                                     self.parse_to_val_func,
-                                                     self.parse_to_val_by_VR_func)
-                except Exception as err:
-                    traceback.print_stack()
-                    ui.popupError('***ERROR***\nFailed to load file \'%s\'\n%s: %s' %
-                                  (os.path.basename(load_path), type(err).__name__, err))
                     continue
 
                 # --- lock in df_queries
                 df_queries = df_queries_temp[query_table_headings]
 
+                # --- If we are revisiting an EXISTING project, then we need to assimilate these new queries into our
+                # existing list of queries.
+                if not self.new_project:
+                    # --- Load a snapshot of the previous queries (the InitialSearchQueries SNAPSHOT file)
+                    path_prevqueries = os.path.join(self_move_dir, suffix_initial_queries + '.xlsx')
+                    df_prevqueries = self.load_queries(ui, path_prevqueries, query_table_headings)
+
+                    # --- If we can successfully load the old queries, merge them with the new queries and assign
+                    # numbering to the new queries as appropriate
+                    if df_prevqueries is None:
+                        ui.popupError('***ERROR***\nSnapshot queries file "%s" was not found. Cannot validate current '
+                                      'queries with past queries.' % path_prevqueries)
+                    else:
+                        df_prevqueries = df_prevqueries[query_table_headings]
+
+                        # --- if new queries comes with numberings that do not intersect/conflict with old query
+                        # numbering, we're set!
+                        if ('' not in df_queries[Tag.QueryNumber].values) \
+                                and not \
+                                (set(df_queries[Tag.QueryNumber]).
+                                        intersection(
+                                    set(df_prevqueries[Tag.QueryNumber]))):
+
+                            print(df_queries[Tag.QueryNumber].values.tolist())
+                            print(df_prevqueries[Tag.QueryNumber].values.tolist())
+                            # simply combine the two sets of queries and continue
+                            df_queries = df_queries.append(
+                                df_prevqueries
+                            ).sort_values([Tag.QueryNumber])
+
+                        # --- if the new queries have no numbering or have invalid numbering, then autogenerate query
+                        # numbering for the new queries.
+                        else:
+
+                            temp_df_queries = self.combine_with_numbering(ui,
+                                                                          df_prevqueries,
+                                                                          df_queries,
+                                                                          Tag.QueryNumber)
+                            if temp_df_queries is not None:
+                                df_queries = temp_df_queries
+
+
                 # --- Update UI
-                # don't display any data header columns that are empty
-                df_queries_valid = df_queries.replace('', np.nan).dropna(axis='columns')
+                # don't display any data columns that are completely empty
+                df_queries_valid = df_queries.replace('', np.nan).dropna(how='all', axis='columns').fillna('')
                 tbl_queries = df_queries_valid.values.tolist()
                 headings_queries = df_queries_valid.columns.tolist()
                 self.updateTable(ui, ui.main_window, '_TABLE_RAW_MAIN_', tbl_queries, headings=headings_queries)
@@ -1758,13 +1965,13 @@ class Main:
 
                 # --- Load excel file
                 load_path = path
-                df_results_temp = self.load_excel(ui, load_path, results_table_headings, excel_to_tag)
+                df_results_temp = self.load_excel(ui, load_path, results_table_headings)
                 if df_results_temp is None:
                     continue
 
                 # --- standardize excel values to dataframe values as necessary
                 try:
-                    df_results_temp = self.format_df(ui, df_results_temp, master_tagname_to_tag,
+                    df_results_temp = self.format_df(ui, df_results_temp,
                                                      self.parse_to_val_func,
                                                      self.parse_to_val_by_VR_func)
                 except Exception as err:
@@ -1786,9 +1993,9 @@ class Main:
                 num_total_selected_series = 0
 
                 # --- Update our results descriptor
-                num_queries = df_results['Query'].nunique()
-                num_missing = len(df_results[df_results['Status'] == 'MISSING'])
-                num_matches = df_results['Study'].nunique() - num_missing
+                num_queries = df_results[Tag.QueryNumber].nunique()
+                num_missing = len(df_results[df_results[Tag.RowStatus] == RowStatus.MISSING])
+                num_matches = df_results[Tag.StudyNumber].nunique() - num_missing
                 descriptor = '%d Quer%s: %d Matching stud%s, %d Unmatched quer%s' % \
                              (num_queries, 'y' if num_queries == 1 else 'ies',
                               num_matches, 'y' if num_matches == 1 else 'ies',
@@ -1811,7 +2018,6 @@ class Main:
                 series_descr_key = '_EXACT_MATCH_SERIESDESCRIPTION_'
                 args = {study_descr_key: values[study_descr_key], series_descr_key: values[series_descr_key]}
                 [queries, formatting_failures] = self.craft_queries(ui, df_queries, query_tags=query_tags_sorted,
-                                                                    master_tagname_to_tag=master_tagname_to_tag,
                                                                     args=args)
 
                 # --- set phase
@@ -1833,33 +2039,36 @@ class Main:
 
             # --- Checkbox Tree manual implementation using icons
             elif event == '_TREE_RESULTS_MAIN_':
+                if self.cur_phase == Phase.PHASE_LOCK:
+                    continue
+
                 selected_row_key = ui.main_window.Element('_TREE_RESULTS_MAIN_').SelectedRows[0]
                 # we only update the tree if the user clicks on a SERIES node and it is not already in the DOWNLOADED
                 # status
-                if (selected_row_key.startswith('SERIES:')) and (unique_nodes[selected_row_key].status !=
-                                                                 Status.DOWNLOADED):
+                if (selected_row_key.startswith('SERIES:')) and (unique_nodes[selected_row_key].nodestatus !=
+                                                                 NodeStatus.DOWNLOADED):
                     series_node = unique_nodes[selected_row_key]
                     study_node = unique_nodes[series_node.parent_study_key]
                     # update the backend representations of the series/study amalgamations
-                    if series_node.status == Status.SELECTED:
-                        series_node.status = Status.UNSELECTED
+                    if series_node.nodestatus == NodeStatus.SELECTED:
+                        series_node.nodestatus = NodeStatus.UNSELECTED
                         study_node.num_selected_series -= 1
                         num_total_selected_series -= 1
                     else:
-                        series_node.status = Status.SELECTED
+                        series_node.nodestatus = NodeStatus.SELECTED
                         study_node.num_selected_series += 1
                         num_total_selected_series += 1
 
                     # update the icon for the current (series) node
                     ui.set_tree_series_node(ui.main_window, '_TREE_RESULTS_MAIN_', selected_row_key,
-                                            series_node.status)
+                                            series_node.nodestatus)
 
                     # update the icon for the parent (study) node
                     ui.set_tree_study_node(ui.main_window, '_TREE_RESULTS_MAIN_', series_node.parent_study_key,
                                            study_node.num_selected_series > 0)
 
                     # require at least 1 selected series before allowing the user to attempt a download
-                    self.updatePhase(ui, Phase.PHASE_MOVE if num_total_selected_series > 0 else Phase.PHASE_FILT)
+                    # self.updatePhase(ui, Phase.PHASE_MOVE if num_total_selected_series > 0 else Phase.PHASE_FILT)
 
 
             # --- User-selected header tag filters for which studies/series we ultimately download
@@ -1868,25 +2077,25 @@ class Main:
                 if df_results is None or len(df_results) <= 0:
                     continue
 
-                txt0 = 'Please use the checkboxes to select at least one series to download.'
-
-                txt1 = 'A)  INDIVIDUAL STUDY RESULTS ARE NOT DISPLAYED. EACH EXPANDABLE ENTRY REPRESENTS A ' \
-                       'CLUSTER OF STUDIES that all share a unique combination of both StudyDescription and ' \
-                       'SeriesDescriptions. The "# of Studies" column indicates how many studies are in that ' \
-                       'cluster. This format is to allow the user to efficiently sift through a large numbers of ' \
-                       'query results to quickly select the studies (and in particular the series) of interest.'
-
-                txt2 = 'B)  BY DEFAULT, NO STUDIES/SERIES ARE SELECTED FOR DOWNLOAD. You must EXPAND ' \
-                       'EACH STUDY CLUSTER and MANUALLY SELECT THE SPECIFIC SERIES that you wish to download ' \
-                       'from each study cluster. This is to encourage the user to be mindful of their ' \
-                       'bandwidth/storage usage and only download the specific series in the specific studies that ' \
-                       'they need. At least one series must be selected to initiate a download'
-
-                title = '3. Select Series of Interest for Each Study'
-
                 if num_total_selected_series > 0:
                     self.updatePhase(ui, Phase.PHASE_MOVE)
                 else:
+                    txt0 = 'Please use the checkboxes to select at least one series to download.'
+
+                    txt1 = 'A)  INDIVIDUAL STUDY RESULTS ARE NOT DISPLAYED. EACH EXPANDABLE ENTRY REPRESENTS A ' \
+                           'CLUSTER OF STUDIES that all share a unique combination of both StudyDescription and ' \
+                           'SeriesDescriptions. The "# of Studies" column indicates how many studies are in that ' \
+                           'cluster. This format is to allow the user to efficiently sift through a large numbers of ' \
+                           'query results to quickly select the studies (and in particular the series) of interest.'
+
+                    txt2 = 'B)  BY DEFAULT, NO STUDIES/SERIES ARE SELECTED FOR DOWNLOAD. You must EXPAND ' \
+                           'EACH STUDY CLUSTER and MANUALLY SELECT THE SPECIFIC SERIES that you wish to download ' \
+                           'from each study cluster. This is to encourage the user to be mindful of their ' \
+                           'bandwidth/storage usage and only download the specific series in the specific studies that ' \
+                           'they need. At least one series must be selected to initiate a download'
+
+                    title = '3. Select Series of Interest for Each Study'
+
                     ui.popupTextBox(txt0 + '\n\n' + txt1 + '\n\n' + txt2,
                                                                        title=title)
 
@@ -1898,7 +2107,7 @@ class Main:
                 # confirmed to be in the database and are not MISSING.
                 df_move = df_results.copy()
                 # - Drop all rows with (Status == 'MISSING' or 'DOWNLOADED')
-                df_move = df_move[(df_move['Status'] != 'MISSING') & (df_move['Status'] != 'DOWNLOADED')]
+                df_move = df_move[(df_move[Tag.RowStatus] != RowStatus.MISSING) & (df_move[Tag.RowStatus] != RowStatus.DOWNLOADED)]
                 # - target only the user's selected studydescription/seriesdescription combos from the ui results tree
                 selected_dfs = [pd.DataFrame(columns=df_move.columns)]
                 for study_key in study_nodes.keys():
@@ -1906,11 +2115,12 @@ class Main:
                     if study_node.num_selected_series > 0:
                         for series_key in study_node.series_nodes:
                             series_node = study_node.series_nodes[series_key]
-                            if series_node.status == Status.SELECTED:
+                            if series_node.nodestatus == NodeStatus.SELECTED:
                                 selected_dfs.append(
                                     df_move[
                                         (df_move['StudyDescription'] == study_node.study_description) &
-                                        (df_move['SeriesDescription'] == series_node.series_description)
+                                        (df_move['SeriesDescription'] == series_node.series_description) &
+                                        (df_move[Tag.StudyNumber].isin(study_node.study_numbers))
                                         ]
                                 )
 
@@ -1943,7 +2153,7 @@ class Main:
 
                     # ------- Generate all study folder names
                     if anonymize:
-                        studydirname = str(row['Study'])
+                        studydirname = str(row[Tag.StudyNumber])
                     else:
                         mrn = pac.squish(row['PatientID'])
                         accession = pac.squish(row['AccessionNumber'])
@@ -1962,7 +2172,6 @@ class Main:
                 # 5. --- CRAFT C-MOVE QUERIES. Shotgun it.
                 # assemble queries
                 [queries, formatting_failures] = self.craft_queries(ui, df_move, query_tags=query_tags_sorted,
-                                                                    master_tagname_to_tag=master_tagname_to_tag,
                                                                     args=None)
 
                 # 6. --- CONFIRM DOWNLOAD STORAGE DIRECTORY, append numbers to the end of the name if necessary

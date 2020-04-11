@@ -6,7 +6,7 @@ else:
 
 import textwrap
 
-from datastruct import Status
+from datastruct import NodeStatus
 from datastruct import Phase
 
 class GUI:
@@ -30,8 +30,11 @@ class GUI:
     DISPLAY_RESULTS = '_DISPLAY_RESULTS_'
     DISPLAY_QUERIES = '_DISPLAY_QUERIES_'
     DISPLAY_NAVIGATION = '_DISPLAY_NAVIGATION_'
-    DISPLAY_LOAD_CHOICE = '_DISPLAY_LOAD_CHOICE_'
-    DISPLAY_LOAD_PARAMETERS = '_DISPLAY_LOAD_PARAMETERS_'
+    DISPLAY_CHOICE = '_DISPLAY_CHOICE_'
+    DISPLAY_PARAMETERS = '_DISPLAY_PARAMETERS_'
+    DISPLAY_TITLE_LOAD = '_TITLE_LOAD_'
+    DISPLAY_TXT_QUERYFILE = '_TXT_QUERYFILE_'
+    DISPLAY_TXT_LOADDIR = '_TXT_LOADDIR_'
     DISPLAY_FIND = '_DISPLAY_FIND_'
     DISPLAY_FILTER = '_DISPLAY_FILTER_'
     DISPLAY_MOVE = '_DISPLAY_MOVE_'
@@ -55,9 +58,16 @@ class GUI:
     # *******************************
 
     # phase limits for navigation (back/next)
-    first_phase = Phase.PHASE_LOAD_CHOICE
+    first_phase = Phase.PHASE_CHOICE
     last_phase = Phase.PHASE_FILT
 
+    # Dynamic strings for the "LOAD PARAMETERS" phase
+    str_loaddir_new = None
+    str_loaddir_old = None
+    str_loadqueryfile_new = None
+    str_loadqueryfile_old = None
+    str_loaddir_new = None
+    str_loaddir_old = None
 
 
     # *******************************
@@ -176,16 +186,16 @@ class GUI:
         tree_element = window.Element(treekey)
 
         switcher = {
-            Status.SELECTED: self.icon_smallcheckboxcheckedgreen,
-            Status.UNSELECTED: self.icon_smallcheckboxempty,
-            Status.DOWNLOADED: self.icon_redcross
+            NodeStatus.SELECTED: self.icon_smallcheckboxcheckedgreen,
+            NodeStatus.UNSELECTED: self.icon_smallcheckboxempty,
+            NodeStatus.DOWNLOADED: self.icon_redcross
         }
         icon = switcher[status]
 
         tree_element.Update(
             key=nodekey,
             icon=icon,
-            value=[]#status.value]
+            value=[]
         )
 
     def set_tree_study_node(self, window, treekey, nodekey, is_selected):
@@ -222,9 +232,9 @@ class GUI:
 
             # for each unique series description in each unique study description
             series_switcher = {
-                Status.SELECTED: self.icon_smallcheckboxcheckedgreen,
-                Status.UNSELECTED: self.icon_smallcheckboxempty,
-                Status.DOWNLOADED: self.icon_redcross
+                NodeStatus.SELECTED: self.icon_smallcheckboxcheckedgreen,
+                NodeStatus.UNSELECTED: self.icon_smallcheckboxempty,
+                NodeStatus.DOWNLOADED: self.icon_redcross
             }
             for series_unique_key in sorted(study_node.series_nodes.keys()):
                 series_node = study_node.series_nodes[series_unique_key]
@@ -233,8 +243,8 @@ class GUI:
                     parent=study_node.unique_key,
                     key=series_node.unique_key,
                     text=series_node.series_description,
-                    values=[],#series_node.status.value],
-                    icon=(series_switcher[series_node.status])
+                    values=[],
+                    icon=(series_switcher[series_node.nodestatus])
                 )
 
         tree_element.Update(treedata)
@@ -252,10 +262,11 @@ class GUI:
         window.Element(key).Update(button_color=color)
 
 
-    def set_phase_LOAD_CHOICE(self, args):
+    def set_phase_CHOICE(self, args):
         # display
-        self.setVisible(self.main_window, self.DISPLAY_LOAD_CHOICE, True)
-        self.setVisible(self.main_window, self.DISPLAY_LOAD_PARAMETERS, False)
+        self.setVisible(self.main_window, self.DISPLAY_CHOICE, True)
+
+        self.setVisible(self.main_window, self.DISPLAY_PARAMETERS, False)
         self.setVisible(self.main_window, self.DISPLAY_QUERIES, False)
         self.setVisible(self.main_window, self.DISPLAY_FIND, False)
         self.setVisible(self.main_window, self.DISPLAY_RESULTS, False)
@@ -263,14 +274,22 @@ class GUI:
         self.setVisible(self.main_window, self.DISPLAY_MOVE, False)
         # color
         self.colorButton(self.main_window, self.BUTTON_NEW, self.highlight_btn_color)
-        self.colorButton(self.main_window, self.BUTTON_OLD)
+        self.colorButton(self.main_window, self.BUTTON_OLD, self.highlight_btn_color)
         # enable/disable
         self.enableButton(self.main_window, self.BUTTON_NEW, True)
         self.enableButton(self.main_window, self.BUTTON_OLD, True)
 
-    def set_phase_LOAD_PARAMETERS(self, new_project):
-        self.setVisible(self.main_window, self.DISPLAY_LOAD_CHOICE, False)
-        self.setVisible(self.main_window, self.DISPLAY_LOAD_PARAMETERS, True)
+    def set_phase_PARAMETERS(self, new_project):
+        # display
+        self.setVisible(self.main_window, self.DISPLAY_PARAMETERS, True)
+        self.set_txt(self.main_window, self.DISPLAY_TITLE_LOAD,
+                     self.str_loadparam_new if new_project else self.str_loadparam_old)
+        self.set_txt(self.main_window, self.DISPLAY_TXT_QUERYFILE,
+                     self.str_loadqueryfile_new if new_project else self.str_loadqueryfile_old)
+        self.set_txt(self.main_window, self.DISPLAY_TXT_LOADDIR,
+                     self.str_loaddir_new if new_project else self.str_loaddir_old)
+
+        self.setVisible(self.main_window, self.DISPLAY_CHOICE, False)
         self.setVisible(self.main_window, self.DISPLAY_QUERIES, False)
         self.setVisible(self.main_window, self.DISPLAY_FIND, False)
         self.setVisible(self.main_window, self.DISPLAY_RESULTS, False)
@@ -282,10 +301,12 @@ class GUI:
         self.enableButton(self.main_window, self.BUTTON_LOAD_QUERIES, True)
 
     def set_phase_FIND(self, args):
-        self.setVisible(self.main_window, self.DISPLAY_LOAD_CHOICE, False)
-        self.setVisible(self.main_window, self.DISPLAY_LOAD_PARAMETERS, False)
+        # display
         self.setVisible(self.main_window, self.DISPLAY_QUERIES, True)
         self.setVisible(self.main_window, self.DISPLAY_FIND, True)
+
+        self.setVisible(self.main_window, self.DISPLAY_CHOICE, False)
+        self.setVisible(self.main_window, self.DISPLAY_PARAMETERS, False)
         self.setVisible(self.main_window, self.DISPLAY_RESULTS, False)
         self.setVisible(self.main_window, self.DISPLAY_FILTER, False)
         self.setVisible(self.main_window, self.DISPLAY_MOVE, False)
@@ -295,12 +316,14 @@ class GUI:
         self.enableButton(self.main_window, self.BUTTON_FIND, True)
 
     def set_phase_FILT(self, args):
-        self.setVisible(self.main_window, self.DISPLAY_LOAD_CHOICE, False)
-        self.setVisible(self.main_window, self.DISPLAY_LOAD_PARAMETERS, False)
-        self.setVisible(self.main_window, self.DISPLAY_QUERIES, False)
-        self.setVisible(self.main_window, self.DISPLAY_FIND, False)
+        # display
         self.setVisible(self.main_window, self.DISPLAY_RESULTS, True)
         self.setVisible(self.main_window, self.DISPLAY_FILTER, True)
+
+        self.setVisible(self.main_window, self.DISPLAY_CHOICE, False)
+        self.setVisible(self.main_window, self.DISPLAY_PARAMETERS, False)
+        self.setVisible(self.main_window, self.DISPLAY_QUERIES, False)
+        self.setVisible(self.main_window, self.DISPLAY_FIND, False)
         self.setVisible(self.main_window, self.DISPLAY_MOVE, False)
         # color
         self.colorButton(self.main_window, self.BUTTON_FILTER, self.highlight_btn_color)
@@ -308,13 +331,15 @@ class GUI:
         self.enableButton(self.main_window, self.BUTTON_FILTER, True)
 
     def set_phase_MOVE(self, args):
-        self.setVisible(self.main_window, self.DISPLAY_LOAD_CHOICE, False)
-        self.setVisible(self.main_window, self.DISPLAY_LOAD_PARAMETERS, False)
+        # display
+        self.setVisible(self.main_window, self.DISPLAY_MOVE, True)
+
+        self.setVisible(self.main_window, self.DISPLAY_CHOICE, False)
+        self.setVisible(self.main_window, self.DISPLAY_PARAMETERS, False)
         self.setVisible(self.main_window, self.DISPLAY_QUERIES, False)
         self.setVisible(self.main_window, self.DISPLAY_FIND, False)
         self.setVisible(self.main_window, self.DISPLAY_RESULTS, True)
         self.setVisible(self.main_window, self.DISPLAY_FILTER, False)
-        self.setVisible(self.main_window, self.DISPLAY_MOVE, True)
         # color
         self.colorButton(self.main_window, self.BUTTON_MOVE, self.highlight_btn_color)
         # enable/disable
@@ -332,8 +357,8 @@ class GUI:
     def set_phase(self, phase, furthest_phase, args=None):
         # --- Display different elements depending on the phase
         switcher = {
-            Phase.PHASE_LOAD_CHOICE: self.set_phase_LOAD_CHOICE,
-            Phase.PHASE_LOAD_PARAMETERS: self.set_phase_LOAD_PARAMETERS,
+            Phase.PHASE_CHOICE: self.set_phase_CHOICE,
+            Phase.PHASE_PARAMETERS: self.set_phase_PARAMETERS,
             Phase.PHASE_FIND: self.set_phase_FIND,
             Phase.PHASE_FILT: self.set_phase_FILT,
             Phase.PHASE_MOVE: self.set_phase_MOVE,
@@ -990,6 +1015,7 @@ class GUI:
         # -------------------------- TAB: Main
 
         # ------ TABLE: raw entries loaded from a file
+        title_querydatabase = sg.Text('SEARCH DATABASE', text_color='darkblue', font='Any 18 bold')
         text_table_raw_main = sg.Text('  Studies of Interest (Queries)', text_color='darkblue', font='Any 11')
         raw_padding = padding_pretty_raw_main if padding_pretty_raw_main else [' ' * 6] * len(headings_pretty_raw_main)
         table_raw_main = sg.Table(
@@ -1009,6 +1035,7 @@ class GUI:
                                       )
         col_table_raw_main = sg.Column(
             [
+                [title_querydatabase],
                 [text_table_raw_main],
                 [coltable_raw_main]
             ],
@@ -1017,6 +1044,7 @@ class GUI:
         )
 
         # ------ TABLE: query results
+        title_downloadstudies = sg.Text('DOWNLOAD STUDIES', text_color='darkblue', font='Any 18 bold')
         text_table_results_main = sg.Text('  Query Results', text_color='darkblue', font='Any 11',
                                           key='_LABEL_RESULTS_MAIN_')
         btn_sort_main = sg.Button('Sort',
@@ -1056,6 +1084,7 @@ class GUI:
 
         col_table_results_main = sg.Column(
             [
+                [title_downloadstudies],
                 [text_table_results_main, btn_load_find_results_main, text_descriptor_main], #btn_sort_main],
                 [coltable_results_main],
             ],
@@ -1066,20 +1095,22 @@ class GUI:
         # ------ BUTTONS, INPUTS, and OPTIONS: Load, Find, Move
 
         # ---
-        btn_loadnew_main = sg.Button('Load New Queries',
+        btn_loadnew_main = sg.Button('New Project',
                                      size=(18, 1),
                                      button_color=self.default_btn_color,
                                      key=self.BUTTON_NEW)
         str_loadnew = 'Choose this option if you have a completely new set of studies to download.'
         txt_loadnew_main = sg.Text('\n'.join(textwrap.wrap(str_loadnew, 90)))
-        btn_loadold_main = sg.Button('Load Updated Queries for Existing Project',
-                                          size=(35, 1),
+        btn_loadold_main = sg.Button('Existing Project',
+                                          size=(18, 1),
                                           button_color=self.default_btn_color,
                                           key=self.BUTTON_OLD)
         str_loadold = 'Choose this option if you are returning to an existing project (typically with an ' \
-                      'updated/addended query file). You will need to specify the project directory that you ' \
-                      'previously downloaded files to (in particular, the SNAPSHOT file in that directory will be ' \
-                      'important for validation purposes).'
+                      'updated/addended query file). You will need to specify the previous project directory that ' \
+                      'you downloaded files to. In particular, the SNAPSHOT file in that directory will be ' \
+                      'used for validation purposes. This option is useful for preserving continuity in the ' \
+                      'automatic numbering of queries, as well as tracking which studies have or have not been ' \
+                      'downloaded.'
         txt_loadold_main = sg.Text('\n'.join(textwrap.wrap(str_loadold, 90)))
         col_loadchoice_main = sg.Column(
             [
@@ -1090,46 +1121,71 @@ class GUI:
                 [btn_loadold_main],
                 [txt_loadold_main]
             ],
-            key=self.DISPLAY_LOAD_CHOICE
+            key=self.DISPLAY_CHOICE
         )
 
 
         # --- load parameters
+        self.str_loadparam_new = 'LOAD PARAMETERS: New Project'
+        self.str_loadparam_old = 'LOAD PARAMETERS: Existing Project'
+        title_loadparam = sg.Text(self.str_loadparam_new, text_color='darkblue', font='Any 18 bold',size=(30, 1),
+                                      visible=True,
+                                      key=self.DISPLAY_TITLE_LOAD)
 
         label_loadqueryfile = sg.Text('Query File (Studies)', text_color='darkblue', font='Any 11')
         txt_loadqueryfile = sg.Input('', size=(80, 1), key='_TXT_LOADQUERIES_')
         btn_loadqueryfile = sg.Button('Browse', key=self.BUTTON_QUERYFILE)
-        str_loadqueryfile = 'See "./xlsx/_TEMPLATE_.xlsx" for a sample input file. The single most specific study ' \
-                            'identifier to provide is accession number. Failing that, a combination of MRN, ' \
-                            'study description, and date usually suffice. Be wary of making your queries too broad.'
-        txt_instructions_loadqueryfile = sg.Text('\n'.join(textwrap.wrap(str_loadqueryfile, 80)))
+
+        self.str_loadqueryfile_new = 'Select an XLSX file that contains identifying information on studies of ' \
+                                    'interest. ' \
+                                'For a NEW project, see "./xlsx/_TEMPLATE_.xlsx" for a sample input file. The single ' \
+                                     'best ' \
+                                'study identifier is accession number. Failing that, a combination ' \
+                                'of MRN, study description, and date usually suffice. You may optionally add a ' \
+                                     'column titled "QueryNumber" to override the default query numbering.'
+        self.str_loadqueryfile_new = '\n'.join(textwrap.wrap(self.str_loadqueryfile_new, 90))
+        self.str_loadqueryfile_old = 'Select an XLSX file that contains identifying information on studies of ' \
+                                    'interest. For an EXISTING project, the new query file will be crosschecked against old queries and ' \
+                                    'results from the previously created "SNAPSHOT" file in the project directory. ' \
+                                    'Any new ' \
+                                    'queries will be incorporated.'
+        self.str_loadqueryfile_old = '\n'.join(textwrap.wrap(self.str_loadqueryfile_old, 90))
+        txt_instructions_loadqueryfile = sg.Text(self.str_loadqueryfile_new, size=(70, 5),
+                                                 key=self.DISPLAY_TXT_QUERYFILE)
 
         label_loaddir = sg.Text('Project Storage Directory', text_color='darkblue', font='Any 11')
-        txt_loaddir = sg.Input('', size=(80, 1), key='_TXT_LOADDIR_')
+        txt_loaddir = sg.Input('', size=(80, 1), key='_TXT_STORAGEDIR_')
         btn_loaddir = sg.Button('Browse', key=self.BUTTON_STORAGEDIR)
-        str_loaddir = 'Create (if new) or select (if returning) a directory to store downloaded studies from this ' \
-                      'query file.'
-        txt_instructions_loaddir = sg.Text('\n'.join(textwrap.wrap(str_loaddir, 80)))
 
-        btn_parsequeries = sg.Button('Load Queries From File', key=self.BUTTON_LOAD_QUERIES)
+        self.str_loaddir_new = 'Select a directory to store downloaded studies for this project. *For a NEW project: ' \
+                               'By default, the output directory is autogenerated based on the name of the input ' \
+                               'query file.'
+        self.str_loaddir_new = '\n'.join(textwrap.wrap(self.str_loaddir_new, 90))
+        self.str_loaddir_old = 'Select a directory to store downloaded studies for this project. For an EXISTING ' \
+                               'project, ensure that the project directory has all 3 "SNAPSHOT" files.'
+        self.str_loaddir_old = '\n'.join(textwrap.wrap(self.str_loaddir_old, 90))
+        txt_instructions_loaddir = sg.Text(self.str_loaddir_new, size=(70, 5),
+                                           key=self.DISPLAY_TXT_LOADDIR)
+
+        btn_parsequeries = sg.Button('Load Queries', key=self.BUTTON_LOAD_QUERIES)
 
         col_loadparameters_main = sg.Column(
             [
-                [self.spacer(sz=(1, 1))],
+                [title_loadparam],
                 # Queries file
                 [label_loadqueryfile, btn_loadqueryfile],
                 [txt_loadqueryfile],
                 [txt_instructions_loadqueryfile],
-                [self.spacer(sz=(1, 1))],
+                [self.spacer()],
                 # Storage Directory
                 [label_loaddir, btn_loaddir],
                 [txt_loaddir],
                 [txt_instructions_loaddir],
-                [self.spacer(sz=(1, 2))],
+                [self.spacer()],
                 [btn_parsequeries]
             ],
             visible=False,
-            key=self.DISPLAY_LOAD_PARAMETERS
+            key=self.DISPLAY_PARAMETERS
         )
 
         btn_find_main = sg.Button('Query Database',
@@ -1140,12 +1196,14 @@ class GUI:
                                   size=(20, 1),
                                   button_color=self.default_btn_color,
                                   key=self.BUTTON_MOVE)
-        checkbox_exactstudy_MAIN = sg.Checkbox('Exact Study Description', default=False,
+        checkbox_exactstudy_MAIN = sg.Checkbox('Exact Study Description', size=(20, 1), default=False,
                                                key='_EXACT_MATCH_STUDYDESCRIPTION_')
-        checkbox_exactseries_MAIN = sg.Checkbox('Exact Series Description', default=False,
+        checkbox_exactseries_MAIN = sg.Checkbox('Exact Series Description', size=(20, 1), default=False,
                                                 key='_EXACT_MATCH_SERIESDESCRIPTION_')
-        checkbox_skip_MAIN = sg.Checkbox('Skip Existing Studies', default=False, disabled=True, key='_SKIP_MAIN_')
-        checkbox_anonymize_MAIN = sg.Checkbox('Anonymize', default=True, key='_ANONYMIZE_MAIN_')
+        checkbox_skip_MAIN = sg.Checkbox('Skip Existing Studies', default=False, size=(17, 1), disabled=True,
+                                         key='_SKIP_MAIN_')
+        checkbox_anonymize_MAIN = sg.Checkbox('Anonymize Studies', size=(17, 1), default=True,
+                                              key='_ANONYMIZE_MAIN_')
         """
         col_checkbox_MAIN = sg.Column([
             [self.spacer()],
@@ -1160,10 +1218,8 @@ class GUI:
         col_src_main = sg.Column(
             [
                 [text_src_main],
-                [combo_src_main],
-                [checkbox_exactstudy_MAIN],
-                [checkbox_exactseries_MAIN],
-                [btn_find_main]
+                [checkbox_exactstudy_MAIN, combo_src_main],
+                [checkbox_exactseries_MAIN, btn_find_main]
             ],
             visible=False,
             key=self.DISPLAY_FIND
@@ -1185,10 +1241,8 @@ class GUI:
         col_dest_main = sg.Column(
             [
                 [text_dest_main],
-                [combo_dest_main],
-                [checkbox_skip_MAIN],
-                [checkbox_anonymize_MAIN],
-                [btn_move_main]
+                [checkbox_skip_MAIN, combo_dest_main],
+                [checkbox_anonymize_MAIN, btn_move_main]
             ],
             visible=False,
             key=self.DISPLAY_MOVE
@@ -1233,7 +1287,6 @@ class GUI:
                              key=self.BUTTON_NEXT)
         col_navigation = sg.Column(
             [
-                [self.spacer()],
                 [btn_back, btn_next]
             ],
             key=self.DISPLAY_NAVIGATION
@@ -1248,7 +1301,7 @@ class GUI:
             ]
         )
         tablayout_main = [
-            [col_tab_main, self.spacer(sz=(0, 31))],
+            [col_tab_main, self.spacer(sz=(0, 32))],
             [col_navigation]
         ]
         tab_main = sg.Tab('Main', tablayout_main)
@@ -1501,7 +1554,7 @@ class GUI:
                                                  padding_pretty_results_main=padding_pretty_results_main,
                                                  default_filter_main=default_filter_main)
 
-        self.set_phase(Phase.PHASE_LOAD_CHOICE, Phase.PHASE_LOAD_CHOICE)
+        self.set_phase(Phase.PHASE_CHOICE, Phase.PHASE_CHOICE)
 
         # *******************************
         # THEMES (they're all ugly)
