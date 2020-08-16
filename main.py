@@ -98,14 +98,14 @@ class Main:
     DEFAULT_PEERS = {
         SELF: {
             'peer_name': SELF,
-            'peer_aet': 'BU_RESEARCH',
-            'peer_ip': '10.160.73.180',
-            'peer_port': 50001,
+            'peer_aet': 'EXAMPLE_SELF',
+            'peer_ip': '1.1.1.1',
+            'peer_port': 4100,
         },
-        'BMC PACS': {
-            'peer_name': 'BMC PACS',
-            'peer_aet': 'GEPACSQR',
-            'peer_ip': '10.153.51.130',
+        'EXAMPLE PACS': {
+            'peer_name': 'EXAMPLE PACS',
+            'peer_aet': 'PACSQR',
+            'peer_ip': '2.2.2.2',
             'peer_port': 4100,
         },
         'Conquest': {
